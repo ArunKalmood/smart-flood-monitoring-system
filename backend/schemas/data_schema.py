@@ -1,181 +1,178 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, List
-from datetime import datetime
+from typing import Annotated, List, Optional
+
+from pydantic import BaseModel, BeforeValidator, EmailStr, Field, model_validator
+
+from models.evacuation_center import CenterStatus
+from models.feedback import FeedbackCategory, FeedbackPriority, FeedbackStatus
+from models.sensor import SensorType
+from models.sos import EmergencyType, SOSStatus
+from schemas.validators import (
+    Latitude, Longitude, OptionalPhone, OptionalText, Phone, empty_to_none, optional_number, optional_text, reading,
+)
+
+NonNegativeInt = Annotated[int, BeforeValidator(lambda v: 0 if v in ("", None) else v), Field(0, ge=0)]
 
 
 class SensorCreate(BaseModel):
-    sensor_id: str
-    name: str
-    type: Optional[str] = "water_level"
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    unit: Optional[str] = "m"
-    battery_level: Optional[float] = 100.0
-    firmware_version: Optional[str] = "1.0.0"
+    sensor_id: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=150)
+    type: SensorType = SensorType.WATER_LEVEL
+    location: OptionalText = None
+    latitude: Latitude = None
+    longitude: Longitude = None
+    unit: OptionalText = None            # None → the frontend shows the default unit for the type
+    firmware_version: OptionalText = None
 
-    @field_validator("latitude", "longitude", "battery_level", mode="before")
-    @classmethod
-    def empty_to_none_sensor(cls, v):
-        return None if v == "" or v is None else v
+    @model_validator(mode="after")
+    def both_coordinates_or_neither(self) -> "SensorCreate":
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Provide both latitude and longitude, or neither")
+        return self
 
 
 class SensorDataCreate(BaseModel):
-    sensor_id: str
-    water_level: Optional[float] = None
-    rainfall: Optional[float] = None
-    temperature: Optional[float] = None
-    humidity: Optional[float] = None
-    river_flow: Optional[float] = None
-    battery_level: Optional[float] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    """Reading posted by an IoT device. Out-of-range values are rejected (422)."""
+    sensor_id: str = Field(..., min_length=1, max_length=50)
+    water_level: reading("water_level") = None
+    rainfall: reading("rainfall") = None
+    temperature: reading("temperature") = None
+    humidity: reading("humidity") = None
+    river_flow: reading("river_flow") = None
+    battery_level: reading("battery_level") = None
+    latitude: Latitude = None
+    longitude: Longitude = None
 
-    @field_validator(
-        "water_level", "rainfall", "temperature", "humidity",
-        "river_flow", "battery_level", "latitude", "longitude",
-        mode="before"
-    )
-    @classmethod
-    def empty_to_none_readings(cls, v):
-        return None if v == "" or v is None else v
+    @model_validator(mode="after")
+    def both_coordinates_or_neither(self) -> "SensorDataCreate":
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Provide both latitude and longitude, or neither")
+        return self
 
 
 class PredictionCreate(BaseModel):
-    sensor_id: Optional[int] = None
-    water_level: float
-    rainfall: float
-    temperature: float
-    humidity: float
-    river_flow: Optional[float] = None
-
-    @field_validator("sensor_id", "river_flow", mode="before")
-    @classmethod
-    def empty_to_none_pred(cls, v):
-        return None if v == "" or v is None else v
+    """What-if simulation inputs (same physical ranges as sensor ingestion)."""
+    water_level: reading("water_level", required=True)
+    rainfall: reading("rainfall", required=True)
+    temperature: reading("temperature", required=True)
+    humidity: reading("humidity", required=True)
+    river_flow: reading("river_flow") = None
 
 
 class SOSCreate(BaseModel):
-    name: str
-    phone: str
-    emergency_type: str
-    description: Optional[str] = None
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    name: str = Field(..., min_length=2, max_length=150)
+    phone: Phone
+    emergency_type: EmergencyType
+    description: optional_text(1000) = None
+    location: optional_text(300) = None
+    latitude: Latitude = None
+    longitude: Longitude = None
 
-    @field_validator("latitude", "longitude", mode="before")
-    @classmethod
-    def empty_to_none_lat_lng(cls, v):
-        return None if v == "" or v is None else v
+    @model_validator(mode="after")
+    def both_coordinates_or_neither(self) -> "SOSCreate":
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Provide both latitude and longitude, or neither")
+        return self
 
 
 class SOSUpdate(BaseModel):
-    status: Optional[str] = None
-    assigned_team: Optional[str] = None
-    notes: Optional[str] = None
+    status: Optional[SOSStatus] = None
+    assigned_team: optional_text(200) = None
+    notes: optional_text(1000) = None
 
 
 class FeedbackCreate(BaseModel):
-    title: str
-    category: str
-    description: str
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    priority: str = "medium"
+    title: str = Field(..., min_length=3, max_length=200)
+    category: FeedbackCategory
+    description: str = Field(..., min_length=5, max_length=2000)
+    location: optional_text(300) = None
+    latitude: Latitude = None
+    longitude: Longitude = None
+    priority: FeedbackPriority = FeedbackPriority.MEDIUM
     is_anonymous: bool = False
-    user_name: Optional[str] = None
-    user_email: Optional[str] = None
-
-    @field_validator("latitude", "longitude", mode="before")
-    @classmethod
-    def empty_to_none_lat_lng(cls, v):
-        return None if v == "" or v is None else v
 
 
 class FeedbackUpdate(BaseModel):
-    status: Optional[str] = None
-    admin_notes: Optional[str] = None
-    priority: Optional[str] = None
+    status: Optional[FeedbackStatus] = None
+    admin_notes: optional_text(2000) = None
+    priority: Optional[FeedbackPriority] = None
+
+
+BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
+VOLUNTEER_SKILLS = ("medical", "rescue", "cooking", "driving", "boat_handling")
 
 
 class VolunteerCreate(BaseModel):
-    full_name: str
-    email: str
-    phone: str
-    blood_group: Optional[str] = None
-    skills: Optional[List[str]] = []
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    full_name: str = Field(..., min_length=2, max_length=150)
+    email: EmailStr
+    phone: Phone
+    blood_group: Annotated[Optional[str], BeforeValidator(empty_to_none)] = None
+    skills: List[str] = []
+    location: optional_text(200) = None
+    latitude: Latitude = None
+    longitude: Longitude = None
     availability: bool = True
-    organization: Optional[str] = None
+    organization: optional_text(200) = None
 
-    @field_validator("latitude", "longitude", mode="before")
-    @classmethod
-    def empty_to_none_lat_lng(cls, v):
-        return None if v == "" or v is None else v
+    @model_validator(mode="after")
+    def known_values(self) -> "VolunteerCreate":
+        if self.blood_group is not None and self.blood_group not in BLOOD_GROUPS:
+            raise ValueError(f"Blood group must be one of: {', '.join(BLOOD_GROUPS)}")
+        unknown = [s for s in self.skills if s not in VOLUNTEER_SKILLS]
+        if unknown:
+            raise ValueError(f"Unknown skills: {', '.join(unknown)}")
+        return self
 
 
 class EvacuationCenterCreate(BaseModel):
-    name: str
-    address: Optional[str] = None
-    capacity: int = 0
-    current_occupancy: int = 0
+    name: str = Field(..., min_length=2, max_length=200)
+    address: optional_text(300) = None
+    capacity: NonNegativeInt = 0
+    current_occupancy: NonNegativeInt = 0
     food_available: bool = False
     medical_available: bool = False
-    contact_number: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    status: str = "open"
-    notes: Optional[str] = None
+    contact_number: OptionalPhone = None
+    latitude: Latitude = None
+    longitude: Longitude = None
+    status: CenterStatus = CenterStatus.OPEN
+    notes: OptionalText = None
 
-    @field_validator("latitude", "longitude", mode="before")
-    @classmethod
-    def empty_to_none_lat_lng(cls, v):
-        return None if v == "" or v is None else v
+    @model_validator(mode="after")
+    def occupancy_within_capacity(self) -> "EvacuationCenterCreate":
+        if self.current_occupancy > self.capacity:
+            raise ValueError("Current occupancy cannot exceed capacity")
+        return self
 
-    @field_validator("capacity", "current_occupancy", mode="before")
-    @classmethod
-    def empty_to_zero(cls, v):
-        return 0 if v == "" or v is None else v
+
+RESOURCE_TYPES = ("boat", "ambulance", "food_kit", "medical_kit", "volunteer", "police", "fire_department")
 
 
 class ResourceCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=2, max_length=200)
     type: str
-    quantity_total: int = 0
-    quantity_available: int = 0
-    current_location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    assigned_team: Optional[str] = None
+    quantity_total: NonNegativeInt = 0
+    quantity_available: NonNegativeInt = 0
+    current_location: optional_text(300) = None
+    latitude: Latitude = None
+    longitude: Longitude = None
+    assigned_team: optional_text(200) = None
     is_available: bool = True
-    notes: Optional[str] = None
+    notes: OptionalText = None
 
-    @field_validator("latitude", "longitude", mode="before")
-    @classmethod
-    def empty_to_none_lat_lng(cls, v):
-        return None if v == "" or v is None else v
-
-    @field_validator("quantity_total", "quantity_available", mode="before")
-    @classmethod
-    def empty_to_zero(cls, v):
-        return 0 if v == "" or v is None else v
+    @model_validator(mode="after")
+    def consistent(self) -> "ResourceCreate":
+        if self.type not in RESOURCE_TYPES:
+            raise ValueError(f"Resource type must be one of: {', '.join(RESOURCE_TYPES)}")
+        if self.quantity_available > self.quantity_total:
+            raise ValueError("Available quantity cannot exceed the total")
+        return self
 
 
 class AlertCreate(BaseModel):
-    title: str
-    message: str
-    type: Optional[str] = "flood_warning"
-    severity: str = "medium"
-    affected_area: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    radius_km: Optional[float] = None
-
-    @field_validator("latitude", "longitude", "radius_km", mode="before")
-    @classmethod
-    def empty_to_none_numbers(cls, v):
-        return None if v == "" or v is None else v
+    title: str = Field(..., min_length=3, max_length=200)
+    message: str = Field(..., min_length=3, max_length=2000)
+    type: Annotated[Optional[str], BeforeValidator(empty_to_none)] = "flood_warning"
+    severity: str = Field("medium", pattern="^(low|medium|high|critical)$")
+    affected_area: optional_text(300) = None
+    latitude: Latitude = None
+    longitude: Longitude = None
+    radius_km: optional_number(gt=0, le=500) = None

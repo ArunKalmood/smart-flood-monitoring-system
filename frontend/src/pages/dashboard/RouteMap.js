@@ -1,475 +1,548 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { MapPin, AlertTriangle, Navigation, Route, Zap, Locate, RefreshCw } from 'lucide-react';
-import {
-  MapContainer, TileLayer, Marker, Popup, Circle,
-  Polyline, useMap, ZoomControl,
-} from 'react-leaflet';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Navigation, Locate, RefreshCw, Map as MapIcon, ShieldCheck, MapPin } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, ZoomControl, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { evacuationAPI, sosAPI, alertAPI } from '../../services/api';
-import { useLanguage } from '../../context/LanguageContext';
 import 'leaflet/dist/leaflet.css';
+import { alertAPI, evacuationAPI, sensorAPI, sosAPI } from '../../services/api';
+import { useLanguage } from '../../context/LanguageContext';
+import PageHeader from '../../components/common/PageHeader';
+import {
+  FitToPoints, INDIA_CENTER, InvalidateSizeOnMount, TILE_ATTRIBUTION, TILE_URL,
+  dotIcon, haversineDistanceKm, isValidLatLng, withValidCoords,
+  fetchRoadRoute, isShelterAvailable, getSensorRiskColor, useAreaName,
+} from '../../components/maps/mapUtils';
+import { SOS_STATUS_STYLES } from '../../constants/status';
+import { formatDateTime } from '../../utils/datetime';
+import { latitudeRules, longitudeRules } from '../../utils/validation';
+import { toastError } from '../../utils/toast';
 
-// ── Fix default Leaflet icon paths ─────────────────────────────────────────
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+const LAYERS = [
+  { key: 'alertZones', labelKey: 'map_layer_alert_zones', color: 'bg-red-400' },
+  { key: 'sos', labelKey: 'map_layer_sos', color: 'bg-amber-500' },
+  { key: 'centers', labelKey: 'map_layer_centers', color: 'bg-purple-500' },
+  { key: 'sensors', labelKey: 'map_layer_sensors', color: 'bg-cyan-500' },
+  { key: 'routes', labelKey: 'map_layer_routes', color: 'bg-emerald-500' },
+];
+const DEFAULT_ALERT_RADIUS_KM = 1;
 
-// ── Icon helpers ────────────────────────────────────────────────────────────
-const createColoredIcon = (color) => L.divIcon({
-  html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>`,
-  iconSize: [16, 16],
+const userIcon = L.divIcon({
+  html: '<span style="display:block;width:18px;height:18px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 6px rgba(59,130,246,0.25)"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
   className: '',
 });
 
-const userLocationIcon = L.divIcon({
-  html: `
-    <div style="position:relative;width:28px;height:28px;">
-      <div style="
-        position:absolute;inset:0;
-        border-radius:50%;
-        background:rgba(59,130,246,0.25);
-        animation:pulse-ring 1.8s ease-out infinite;
-      "></div>
-      <div style="
-        position:absolute;inset:5px;
-        border-radius:50%;
-        background:#3b82f6;
-        border:2.5px solid white;
-        box-shadow:0 2px 10px rgba(59,130,246,0.6);
-      "></div>
-    </div>
-    <style>
-      @keyframes pulse-ring {
-        0%   { transform:scale(1);   opacity:.8; }
-        100% { transform:scale(2.6); opacity:0;  }
-      }
-    </style>`,
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-  className: '',
-});
-
-// ── Static overlay data ─────────────────────────────────────────────────────
-const SAFE_ROUTES = [
-  [[20.6, 79.0], [20.65, 79.05], [20.7, 79.08], [20.75, 79.1]],
-  [[20.5, 78.9], [20.55, 78.95], [20.58, 79.0]],
-];
-const FLOODED_AREAS = [
-  { center: [20.55, 78.95], radius: 2000 },
-  { center: [20.62, 79.02], radius: 1500 },
-];
-const BLOCKED_ROADS = [
-  [[20.57, 78.97], [20.59, 79.0]],
-  [[20.63, 79.03], [20.65, 79.05]],
-];
-
-// ── Helper: fly to position from inside the map ─────────────────────────────
-function FlyToLocation({ position }) {
+function FlyTo({ target }) {
   const map = useMap();
   useEffect(() => {
-    if (position) map.flyTo(position, 14, { duration: 1.4 });
-  }, [position, map]);
+    if (target) map.flyTo(target, 14, { duration: 1.2 });
+  }, [target, map]);
   return null;
 }
 
-// ── Main Component ──────────────────────────────────────────────────────────
 export default function RouteMap() {
-  const { t } = useLanguage();
-
-  // API data
-  const [centers,    setCenters]    = useState([]);
+  const { t, language } = useLanguage();
+  const [centers, setCenters] = useState([]);
   const [sosMarkers, setSosMarkers] = useState([]);
-  const [alerts,     setAlerts]     = useState([]);
-  const [loading,    setLoading]    = useState(true);
+  const [alerts, setAlerts] = useState([]);
+  const [sensors, setSensors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [layers, setLayers] = useState({ alertZones: true, sos: true, centers: true, sensors: true, routes: true });
+  const [userPos, setUserPos] = useState(null);
+  const [geoStatus, setGeoStatus] = useState('idle'); // idle | locating | ok | denied | unavailable
+  const { areaName, areaStatus } = useAreaName(geoStatus === 'ok' ? userPos : null, language);
+  const [manual, setManual] = useState({ lat: '', lng: '' });
+  const [manualError, setManualError] = useState('');
+  const [flyTarget, setFlyTarget] = useState(null);
+  const [selectedCenterId, setSelectedCenterId] = useState(null);
+  const [roadRoute, setRoadRoute] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const watchId = useRef(null);
+  const routeSeqRef = useRef(0);
 
-  // Layer toggles
-  const [layers, setLayers] = useState({
-    floodedAreas: true,
-    safeRoutes:   true,
-    blockedRoads: true,
-    sosPins:      true,
-    centers:      true,
-  });
-
-  // Real-time user location
-  const [userPos,        setUserPos]        = useState(null);   // { lat, lng, accuracy }
-  const [locationStatus, setLocationStatus] = useState('idle'); // idle | locating | ok | denied | error
-  const [flyTo,          setFlyTo]          = useState(null);   // triggers FlyToLocation
-  const watchIdRef = useRef(null);
-
-  // ── Fetch API data ────────────────────────────────────────────────────────
-  useEffect(() => {
-    Promise.allSettled([
+  const load = useCallback(async () => {
+    const [c, s, a, sn] = await Promise.allSettled([
       evacuationAPI.getMapData(),
       sosAPI.getMapData(),
       alertAPI.getAll(),
-    ]).then(([cRes, sRes, aRes]) => {
-      if (cRes.status === 'fulfilled') setCenters(cRes.value.data || []);
-      if (sRes.status === 'fulfilled') setSosMarkers(sRes.value.data || []);
-      if (aRes.status === 'fulfilled') setAlerts(aRes.value.data || []);
-      setLoading(false);
-    });
+      sensorAPI.getAll(),
+    ]);
+    if (c.status === 'fulfilled') setCenters(withValidCoords(c.value.data, 'evacuation centers'));
+    if (s.status === 'fulfilled') setSosMarkers(withValidCoords(s.value.data, 'SOS requests'));
+    if (a.status === 'fulfilled') setAlerts(a.value.data || []);
+    if (sn.status === 'fulfilled') setSensors(withValidCoords(sn.value.data, 'sensors'));
+    const failed = [c, s, a, sn].find((r) => r.status === 'rejected');
+    if (failed) toastError(failed.reason);
+    setLoading(false);
   }, []);
 
-  // ── Start real-time GPS watch ─────────────────────────────────────────────
-  const startLocationWatch = useCallback(() => {
+  useEffect(() => { load(); }, [load]);
+
+  const startLocating = useCallback(() => {
     if (!navigator.geolocation) {
-      setLocationStatus('error');
+      setGeoStatus('unavailable');
       return;
     }
-    setLocationStatus('locating');
-
-    // Clear any existing watcher
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-    }
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    setGeoStatus('locating');
+    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+    watchId.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const newPos = {
-          lat:      pos.coords.latitude,
-          lng:      pos.coords.longitude,
-          accuracy: Math.round(pos.coords.accuracy),
-        };
-        setUserPos(newPos);
-        setLocationStatus('ok');
+        setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) });
+        setGeoStatus('ok');
       },
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) setLocationStatus('denied');
-        else setLocationStatus('error');
-      },
+      (err) => setGeoStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
     );
   }, []);
 
-  // ── Auto-start location on mount, clean up on unmount ────────────────────
   useEffect(() => {
-    startLocationWatch();
+    startLocating();
     return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
+      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
     };
-  }, [startLocationWatch]);
+  }, [startLocating]);
 
-  const centerOnMe = () => {
-    if (userPos) setFlyTo([userPos.lat, userPos.lng]);
+  const applyManualLocation = (e) => {
+    e.preventDefault();
+    const latOk = latitudeRules().validate(manual.lat);
+    const lngOk = longitudeRules().validate(manual.lng);
+    if (manual.lat === '' || manual.lng === '' || latOk !== true || lngOk !== true) {
+      setManualError(t('map_manual_invalid'));
+      return;
+    }
+    setManualError('');
+    const pos = { lat: Number(manual.lat), lng: Number(manual.lng), accuracy: null };
+    setUserPos(pos);
+    setGeoStatus('ok');
+    setFlyTarget([pos.lat, pos.lng]);
   };
 
-  const toggleLayer = (key) =>
-    setLayers(prev => ({ ...prev, [key]: !prev[key] }));
+  const alertZones = useMemo(() => alerts.filter((a) => isValidLatLng(a.latitude, a.longitude)), [alerts]);
+  const alertsWithoutArea = alerts.length - alertZones.length;
 
-  // ── Location status badge ─────────────────────────────────────────────────
-  const locationBadge = () => {
-    if (locationStatus === 'locating') return (
-      <span className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
-        <RefreshCw className="w-3 h-3 animate-spin" /> {t('map_locating')}
-      </span>
-    );
-    if (locationStatus === 'ok' && userPos) return (
-      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
-        {t('map_live_location')}
-      </span>
-    );
-    if (locationStatus === 'denied') return (
-      <span className="text-xs text-red-500">{t('map_location_denied')}</span>
-    );
-    if (locationStatus === 'error') return (
-      <span className="text-xs text-orange-500">{t('map_location_error')}</span>
-    );
-    return null;
+  // Available shelters: open status and remaining capacity
+  const availableCenters = useMemo(() => centers.filter(isShelterAvailable), [centers]);
+
+  // Calculate nearest evacuation center from user location (strictly available shelters)
+  const nearestCenter = useMemo(() => {
+    if (!userPos || !availableCenters.length) return null;
+    let closest = null;
+    let minKm = Infinity;
+    for (const c of availableCenters) {
+      const dist = haversineDistanceKm([userPos.lat, userPos.lng], [c.latitude, c.longitude]);
+      if (dist !== null && dist < minKm) {
+        minKm = dist;
+        closest = {
+          center: c,
+          distance: Math.round(dist * 10) / 10,
+          isAvailable: true,
+        };
+      }
+    }
+    return closest;
+  }, [userPos, availableCenters]);
+
+  // Target center for evacuation route (custom selected shelter or nearest available shelter)
+  const targetCenter = useMemo(() => {
+    if (selectedCenterId) {
+      const found = centers.find((c) => String(c.id) === String(selectedCenterId));
+      if (found) {
+        const dist = userPos
+          ? Math.round((haversineDistanceKm([userPos.lat, userPos.lng], [found.latitude, found.longitude]) || 0) * 10) / 10
+          : null;
+        return { center: found, distance: dist, isAvailable: isShelterAvailable(found), isCustom: true };
+      }
+    }
+    return nearestCenter ? { ...nearestCenter, isCustom: false } : null;
+  }, [selectedCenterId, centers, nearestCenter, userPos]);
+
+  // Fetch real road route asynchronously via OSRM with direct fallback and sequence protection
+  useEffect(() => {
+    if (!userPos || !targetCenter || !layers.routes) {
+      setRoadRoute(null);
+      setRouteLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const seq = ++routeSeqRef.current;
+    setRouteLoading(true);
+
+    fetchRoadRoute(
+      [userPos.lat, userPos.lng],
+      [targetCenter.center.latitude, targetCenter.center.longitude],
+      { signal: controller.signal }
+    )
+      .then((route) => {
+        if (seq === routeSeqRef.current && !controller.signal.aborted) {
+          setRoadRoute(route);
+          setRouteLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (seq === routeSeqRef.current && !controller.signal.aborted) {
+          setRouteLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [userPos, targetCenter, layers.routes]);
+
+  const evacuationPositions = useMemo(() => {
+    if (!layers.routes || !roadRoute || !roadRoute.coordinates || roadRoute.coordinates.length < 2) return null;
+    return roadRoute.coordinates;
+  }, [layers.routes, roadRoute]);
+
+  // Fit to everything that is drawn
+  const points = useMemo(() => [
+    ...(layers.alertZones ? alertZones.map((a) => [a.latitude, a.longitude]) : []),
+    ...(layers.sos ? sosMarkers.map((s) => [s.latitude, s.longitude]) : []),
+    ...(layers.centers ? centers.map((c) => [c.latitude, c.longitude]) : []),
+    ...(layers.sensors ? sensors.map((sn) => [sn.latitude, sn.longitude]) : []),
+    ...(evacuationPositions ? evacuationPositions : []),
+  ], [layers, alertZones, sosMarkers, centers, sensors, evacuationPositions]);
+
+  const counts = {
+    alertZones: alertZones.length,
+    sos: sosMarkers.length,
+    centers: centers.length,
+    sensors: sensors.length,
+    routes: evacuationPositions ? 1 : 0,
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="page-container">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-            <Route className="w-5 h-5 text-green-500" /> {t('map_title')}
-          </h1>
-          <p className="text-slate-500 text-sm mt-0.5">{t('map_subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {locationBadge()}
-          <div className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-400 text-xs font-medium">
-            <Zap className="w-3.5 h-3.5" /> {t('map_ai_ready')}
-          </div>
-        </div>
-      </div>
+      <PageHeader icon={MapIcon} iconClass="text-green-500" title={t('map_title')} subtitle={t('map_subtitle')}>
+        <button type="button" onClick={load} className="btn-outline py-2 px-3 text-xs">
+          <RefreshCw className="w-3 h-3" aria-hidden="true" /> {t('action_refresh')}
+        </button>
+      </PageHeader>
 
       <div className="grid lg:grid-cols-4 gap-6">
-        {/* ── Left panel ─────────────────────────────────────────────── */}
         <div className="space-y-4">
-
-          {/* YOUR LIVE LOCATION card */}
-          <div className="glass-card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-              <Navigation className="w-4 h-4 text-blue-500" /> {t('map_your_location')}
-            </h3>
-
-            {locationStatus === 'locating' && (
-              <div className="flex items-center gap-2 py-2">
-                <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
-                <span className="text-xs text-slate-500">{t('map_locating')}</span>
+          <section className="glass-card p-4" aria-labelledby="my-location-title">
+            <h2 id="my-location-title" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+              <Navigation className="w-4 h-4 text-blue-500" aria-hidden="true" /> {t('map_your_location')}
+            </h2>
+            {geoStatus === 'locating' && (
+              <p className="flex items-center gap-2 text-xs text-slate-500" role="status">
+                <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" /> {t('map_locating')}
+              </p>
+            )}
+            {geoStatus === 'ok' && userPos && (
+              <div className="space-y-2 text-xs">
+                {areaStatus === 'locating' && (
+                  <p className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 py-0.5" role="status">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" aria-hidden="true" />
+                    <span>{t('map_area_locating')}</span>
+                  </p>
+                )}
+                {areaStatus === 'ok' && areaName && (
+                  <div className="space-y-0.5">
+                    <div className="flex items-start gap-1.5 text-slate-800 dark:text-slate-100 font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                      <span className="leading-tight">{areaName}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 pl-5 leading-tight">
+                      {t('map_area_attribution')}
+                    </p>
+                  </div>
+                )}
+                {areaStatus === 'unavailable' && (
+                  <div className="space-y-0.5">
+                    <p className="text-slate-500 dark:text-slate-400 italic text-[11px]">
+                      {t('map_area_unavailable')}
+                    </p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">
+                      {t('map_area_attribution')}
+                    </p>
+                  </div>
+                )}
+                <p className="font-mono text-slate-700 dark:text-slate-200">{userPos.lat.toFixed(5)}, {userPos.lng.toFixed(5)}</p>
+                {userPos.accuracy !== null && <p className="text-slate-500">{t('map_accuracy', { meters: userPos.accuracy })}</p>}
+                <button type="button" onClick={() => setFlyTarget([userPos.lat, userPos.lng])}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium">
+                  <Locate className="w-3.5 h-3.5" aria-hidden="true" /> {t('map_center_me')}
+                </button>
+                {targetCenter ? (
+                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                    <div className="flex items-center justify-between text-[11px] mb-1 font-medium">
+                      <span className="flex items-center gap-1">
+                        {roadRoute?.isRoadRoute ? (
+                          <>
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                            <span className="text-emerald-700 dark:text-emerald-300">
+                              {targetCenter.isCustom ? t('map_shelter_selected') : t('map_road_route')}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Navigation className="w-3.5 h-3.5 text-amber-500" />
+                            <span className="text-amber-700 dark:text-amber-400">
+                              {targetCenter.isCustom ? t('map_shelter_selected') : t('map_direct_route')}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                      {targetCenter.isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCenterId(null)}
+                          className="text-[10px] text-blue-500 hover:underline"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{targetCenter.center.name}</p>
+                    <p className="text-slate-500 text-[11px]">
+                      {(roadRoute?.distanceKm !== undefined ? roadRoute.distanceKm : targetCenter.distance)} km · {t(`evac_status_${targetCenter.center.status}`)}
+                      {targetCenter.center.capacity > 0 && ` (${Math.round(((targetCenter.center.current_occupancy || 0) / targetCenter.center.capacity) * 100)}% full)`}
+                      {roadRoute?.durationMinutes ? ` · ${t('map_route_duration', { minutes: roadRoute.durationMinutes })}` : ''}
+                    </p>
+                    {!targetCenter.isAvailable && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 font-semibold mt-1">
+                        ⚠️ {t(targetCenter.center.status ? `evac_status_${targetCenter.center.status}` : 'evac_status_closed')} — Not currently accepting evacuees
+                      </p>
+                    )}
+                    <p className="text-[10px] mt-0.5">
+                      {routeLoading ? (
+                        <span className="inline-flex items-center gap-1 text-slate-500">
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> {t('action_refresh')}…
+                        </span>
+                      ) : roadRoute?.isRoadRoute ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">{t('map_road_route')}</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">⚠️ {t('map_direct_route')}</span>
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setFlyTarget([targetCenter.center.latitude, targetCenter.center.longitude])}
+                      className="mt-2 w-full py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium"
+                    >
+                      {t('map_nearest_shelter', {
+                        name: targetCenter.center.name,
+                        distance: roadRoute?.distanceKm !== undefined ? roadRoute.distanceKm : targetCenter.distance,
+                      })}
+                    </button>
+                  </div>
+                ) : availableCenters.length === 0 && centers.length > 0 ? (
+                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
+                    {t('map_no_open_shelter')}
+                  </div>
+                ) : null}
               </div>
             )}
-
-            {locationStatus === 'ok' && userPos && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-2"
-              >
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-center">
-                    <p className="text-xs text-blue-500 font-medium">{t('map_lat')}</p>
-                    <p className="text-xs font-mono text-slate-700 dark:text-slate-200 mt-0.5">
-                      {userPos.lat.toFixed(5)}
-                    </p>
-                  </div>
-                  <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-center">
-                    <p className="text-xs text-blue-500 font-medium">{t('map_lng')}</p>
-                    <p className="text-xs font-mono text-slate-700 dark:text-slate-200 mt-0.5">
-                      {userPos.lng.toFixed(5)}
-                    </p>
-                  </div>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-700/50 text-center">
-                  <p className="text-xs text-slate-500">{t('map_accuracy')}</p>
-                  <p className="text-xs font-medium text-slate-700 dark:text-slate-200">±{userPos.accuracy} m</p>
-                </div>
-                <button
-                  onClick={centerOnMe}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium transition-colors"
-                >
-                  <Locate className="w-3.5 h-3.5" /> {t('map_center_me')}
-                </button>
-              </motion.div>
-            )}
-
-            {(locationStatus === 'denied' || locationStatus === 'error') && (
+            {(geoStatus === 'denied' || geoStatus === 'unavailable') && (
               <div className="space-y-2">
-                <p className="text-xs text-red-500">
-                  {locationStatus === 'denied' ? t('map_location_denied') : t('map_location_error')}
+                <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                  {t(geoStatus === 'denied' ? 'map_location_denied' : 'map_location_error')}
                 </p>
-                <button
-                  onClick={startLocationWatch}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Retry
+                <button type="button" onClick={startLocating}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium">
+                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> {t('action_retry')}
                 </button>
               </div>
             )}
-          </div>
+            <form onSubmit={applyManualLocation} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2" noValidate>
+              <p className="text-xs text-slate-500">{t('map_manual_hint')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="number" step="any" value={manual.lat} onChange={(e) => setManual((m) => ({ ...m, lat: e.target.value }))}
+                  placeholder={t('field_latitude')} aria-label={t('field_latitude')} className="input-base py-1.5 text-xs" />
+                <input type="number" step="any" value={manual.lng} onChange={(e) => setManual((m) => ({ ...m, lng: e.target.value }))}
+                  placeholder={t('field_longitude')} aria-label={t('field_longitude')} className="input-base py-1.5 text-xs" />
+              </div>
+              {manualError && <p className="field-error" role="alert">{manualError}</p>}
+              <button type="submit" className="w-full btn-ghost text-xs py-1.5">{t('map_manual_use')}</button>
+            </form>
+          </section>
 
-          {/* Layer Controls */}
-          <div className="glass-card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">{t('map_layers')}</h3>
-            {[
-              { key: 'floodedAreas', label: t('map_flooded'),   color: 'bg-blue-500',   count: FLOODED_AREAS.length  },
-              { key: 'safeRoutes',   label: t('map_safe'),      color: 'bg-green-500',  count: SAFE_ROUTES.length    },
-              { key: 'blockedRoads', label: t('map_blocked'),   color: 'bg-red-500',    count: BLOCKED_ROADS.length  },
-              { key: 'sosPins',      label: t('map_sos_pins'),  color: 'bg-yellow-500', count: sosMarkers.length     },
-              { key: 'centers',      label: t('map_centers'),   color: 'bg-purple-500', count: centers.length        },
-            ].map(l => (
-              <label
-                key={l.key}
-                className="flex items-center justify-between py-2 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${l.color}`} />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">{l.label}</span>
-                  <span className="text-xs text-slate-400">({l.count})</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={layers[l.key]}
-                  onChange={() => toggleLayer(l.key)}
-                  className="w-4 h-4 accent-blue-500"
-                />
+          <section className="glass-card p-4" aria-labelledby="layers-title">
+            <h2 id="layers-title" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">{t('map_layers')}</h2>
+            {LAYERS.map((l) => (
+              <label key={l.key} className="flex items-center justify-between py-2 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0">
+                <span className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                  <span className={`w-3 h-3 rounded-full ${l.color}`} aria-hidden="true" /> {t(l.labelKey)}
+                  <span className="text-slate-400">({counts[l.key]})</span>
+                </span>
+                <input type="checkbox" checked={layers[l.key]} onChange={() => setLayers((p) => ({ ...p, [l.key]: !p[l.key] }))} className="w-4 h-4 accent-blue-500" />
               </label>
             ))}
-          </div>
+            {alertsWithoutArea > 0 && <p className="text-xs text-slate-500 mt-2">{t('map_alerts_without_area', { count: alertsWithoutArea })}</p>}
+          </section>
 
-          {/* Legend */}
-          <div className="glass-card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">{t('map_legend')}</h3>
-            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-1 bg-green-500 rounded" /> {t('map_safe_route')}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-1 bg-red-500 rounded" style={{ border: '1px dashed #ef4444' }} /> {t('map_blocked_road')}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-blue-400 opacity-50" /> {t('map_flooded_zone')}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500" /> {t('map_active_sos')}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-purple-500" /> {t('map_evac_center')}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow" style={{ boxShadow: '0 0 0 3px rgba(59,130,246,0.3)' }} />
-                {t('map_your_location')}
-              </div>
-            </div>
-          </div>
-
-          {/* AI info */}
-          <div className="glass-card p-4 bg-purple-50/50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800/30">
-            <h3 className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-2 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" /> {t('map_ai_title')}
-            </h3>
-            <p className="text-xs text-purple-600 dark:text-purple-300">{t('map_ai_desc')}</p>
-            <p className="text-xs text-purple-500 mt-2 font-mono">POST /api/routes/optimize</p>
-          </div>
-
-          {/* Active Alerts */}
           {alerts.length > 0 && (
-            <div className="glass-card p-4">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500" /> {t('map_active_alerts')}
-              </h3>
-              <div className="space-y-2">
-                {alerts.slice(0, 3).map((a, i) => (
-                  <div key={i} className="p-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-xs">
+            <section className="glass-card p-4" aria-labelledby="map-alerts-title">
+              <h2 id="map-alerts-title" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500" aria-hidden="true" /> {t('dash_active_alerts')}
+              </h2>
+              <ul className="space-y-2">
+                {alerts.slice(0, 5).map((a) => (
+                  <li key={a.id} className="p-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-xs">
                     <p className="font-medium text-red-700 dark:text-red-400">{a.title}</p>
-                    <p className="text-red-500 mt-0.5">{a.affected_area || a.message?.substring(0, 60)}…</p>
-                  </div>
+                    <p className="text-red-600 dark:text-red-300 mt-0.5">{a.affected_area || a.message}</p>
+                  </li>
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
           )}
         </div>
 
-        {/* ── Main Map ────────────────────────────────────────────────── */}
-        <div className="lg:col-span-3 glass-card overflow-hidden" style={{ height: 600 }}>
-          {loading ? (
-            <div className="skeleton h-full w-full" />
-          ) : (
-            <MapContainer
-              center={[20.5937, 78.9629]}
-              zoom={7}
-              style={{ height: '100%', width: '100%' }}
-              className="z-0"
-              zoomControl={false}
-            >
+        <section className="lg:col-span-3 glass-card overflow-hidden relative" style={{ height: 600 }} aria-label={t('map_title')}>
+          {loading ? <div className="skeleton h-full w-full" /> : (
+            <MapContainer center={INDIA_CENTER} zoom={5} className="h-full w-full z-0" zoomControl={false}>
               <ZoomControl position="bottomright" />
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution="© OpenStreetMap contributors"
-              />
+              <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+              <InvalidateSizeOnMount />
+              <FitToPoints points={points} />
+              <FlyTo target={flyTarget} />
 
-              {/* Fly helper */}
-              {flyTo && <FlyToLocation position={flyTo} />}
-
-              {/* ── Flooded areas ── */}
-              {layers.floodedAreas && FLOODED_AREAS.map((a, i) => (
-                <Circle
-                  key={i}
-                  center={a.center}
-                  radius={a.radius}
-                  pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2, weight: 2 }}
+              {/* Evacuation Route Polyline */}
+              {layers.routes && evacuationPositions && targetCenter && (
+                <Polyline
+                  positions={evacuationPositions}
+                  pathOptions={{
+                    color: roadRoute?.isRoadRoute ? '#10b981' : '#f59e0b',
+                    weight: roadRoute?.isRoadRoute ? 4 : 2.5,
+                    dashArray: roadRoute?.isRoadRoute ? undefined : '6 8',
+                    opacity: 0.9,
+                  }}
                 >
                   <Popup>
-                    <strong className="text-blue-600">{t('map_flooded_zone')}</strong>
-                    <br /><span className="text-xs">Avoid this area</span>
+                    <strong>{targetCenter.center.name}</strong>
+                    <br />
+                    <span className={`text-[11px] font-semibold ${roadRoute?.isRoadRoute ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {roadRoute?.isRoadRoute ? t('map_road_route') : `⚠️ ${t('map_direct_route')}`}
+                    </span>
+                    <br />
+                    {roadRoute?.distanceKm !== undefined ? `${roadRoute.distanceKm} km` : `${targetCenter.distance} km`}
+                    {roadRoute?.isRoadRoute && roadRoute?.durationMinutes !== null && roadRoute?.durationMinutes !== undefined && (
+                      <> · {t('map_route_duration', { minutes: roadRoute.durationMinutes })}</>
+                    )}
+                    {!roadRoute?.isRoadRoute && (
+                      <span className="block text-[10px] text-slate-400 mt-1">
+                        (Directional bearing only; road route service unavailable)
+                      </span>
+                    )}
+                  </Popup>
+                </Polyline>
+              )}
+
+              {/* Observed Alert Zones */}
+              {layers.alertZones && alertZones.map((a) => (
+                <Circle key={`alert-${a.id}`} center={[a.latitude, a.longitude]} radius={(a.radius_km || DEFAULT_ALERT_RADIUS_KM) * 1000}
+                  pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, weight: 2 }}>
+                  <Popup>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">[{t('map_observed_alert')}]</span>
+                    <br /><strong>{a.title}</strong><br />{a.message}
+                    {a.affected_area && <><br />{a.affected_area}</>}
+                    <br />{formatDateTime(a.created_at)}
                   </Popup>
                 </Circle>
               ))}
 
-              {/* ── Safe routes ── */}
-              {layers.safeRoutes && SAFE_ROUTES.map((route, i) => (
-                <Polyline
-                  key={i}
-                  positions={route}
-                  pathOptions={{ color: '#22c55e', weight: 4 }}
-                >
+              {/* SOS Markers */}
+              {layers.sos && sosMarkers.map((s) => (
+                <Marker key={`sos-${s.id}`} position={[s.latitude, s.longitude]} icon={dotIcon(SOS_STATUS_STYLES[s.status]?.pin || '#f59e0b')}>
                   <Popup>
-                    <strong className="text-green-600">✅ {t('map_safe_route')}</strong>
-                  </Popup>
-                </Polyline>
-              ))}
-
-              {/* ── Blocked roads ── */}
-              {layers.blockedRoads && BLOCKED_ROADS.map((road, i) => (
-                <Polyline
-                  key={i}
-                  positions={road}
-                  pathOptions={{ color: '#ef4444', weight: 4, dashArray: '8 4' }}
-                >
-                  <Popup>
-                    <strong className="text-red-600">🚫 {t('map_blocked_road')}</strong>
-                  </Popup>
-                </Polyline>
-              ))}
-
-              {/* ── SOS markers ── */}
-              {layers.sosPins && sosMarkers.map(s => (
-                <Marker
-                  key={s.id}
-                  position={[s.latitude, s.longitude]}
-                  icon={createColoredIcon('#f59e0b')}
-                >
-                  <Popup>
-                    <strong className="text-amber-600">🆘 SOS — {s.emergency_type}</strong>
+                    <strong>SOS #{s.id} · {t(`emergency_${s.emergency_type}`)}</strong>
                     <br />{s.name} · {s.phone}
-                    <br /><span className="text-xs">{s.location}</span>
+                    {s.location && <><br />{s.location}</>}
+                    <br />{t(`sos_status_${s.status}`)}
                   </Popup>
                 </Marker>
               ))}
 
-              {/* ── Evacuation centers ── */}
-              {layers.centers && centers.map(c => (
-                <Marker
-                  key={c.id}
-                  position={[c.latitude, c.longitude]}
-                  icon={createColoredIcon('#8b5cf6')}
-                >
-                  <Popup>
-                    <strong className="text-purple-600">🏠 {c.name}</strong>
-                    <br />{t('map_centers')}: {c.current_occupancy}/{c.capacity}
-                    <br />
-                    <span className={`text-xs font-medium ${c.status === 'open' ? 'text-green-600' : 'text-red-600'}`}>
-                      {c.status?.toUpperCase()}
-                    </span>
-                  </Popup>
-                </Marker>
-              ))}
-
-              {/* ── REAL-TIME USER LOCATION ── */}
-              {userPos && locationStatus === 'ok' && (
-                <Marker
-                  position={[userPos.lat, userPos.lng]}
-                  icon={userLocationIcon}
-                  zIndexOffset={1000}
-                >
-                  <Popup>
-                    <div className="text-center">
-                      <strong className="text-blue-600 flex items-center gap-1 justify-center">
-                        📍 {t('map_your_location')}
-                      </strong>
-                      <div className="mt-1 text-xs text-slate-600 space-y-0.5">
-                        <p>{t('map_lat')}: <span className="font-mono">{userPos.lat.toFixed(6)}</span></p>
-                        <p>{t('map_lng')}: <span className="font-mono">{userPos.lng.toFixed(6)}</span></p>
-                        <p>{t('map_accuracy')}: ±{userPos.accuracy} m</p>
+              {/* Evacuation Centers */}
+              {layers.centers && centers.map((c) => {
+                const isAvailable = isShelterAvailable(c);
+                const isSelected = selectedCenterId && String(c.id) === String(selectedCenterId);
+                return (
+                  <Marker key={`center-${c.id}`} position={[c.latitude, c.longitude]} icon={dotIcon(isSelected ? '#10b981' : '#8b5cf6')}>
+                    <Popup>
+                      <strong>{c.name}</strong>
+                      {isAvailable && (
+                        <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 font-medium">
+                          {t('map_shelter_available_badge')}
+                        </span>
+                      )}
+                      <br />{t('evac_capacity_pct', { capacity: c.capacity, pct: c.capacity ? Math.round((c.current_occupancy / c.capacity) * 100) : 0 })}
+                      <br />{t(`evac_status_${c.status}`)}
+                      {c.contact_number && <><br /><a href={`tel:${c.contact_number}`}>{c.contact_number}</a></>}
+                      <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCenterId(c.id)}
+                          className="text-[11px] px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded font-medium"
+                        >
+                          {isSelected ? `✓ ${t('map_shelter_selected')}` : t('map_shelter_selected')}
+                        </button>
                       </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+              {/* Monitoring Sensors with Telemetry and Modelled Flood Risk */}
+              {layers.sensors && sensors.map((sn) => {
+                const riskColor = getSensorRiskColor(sn.risk_level, sn.status);
+                return (
+                  <Marker key={`sensor-${sn.id}`} position={[sn.latitude, sn.longitude]} icon={dotIcon(riskColor)}>
+                    <Popup>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                        [{t('map_modelled_risk')}]
+                      </span>
+                      {sn.is_stale && (
+                        <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                          (Stale)
+                        </span>
+                      )}
+                      <br /><strong>{sn.name}</strong> ({sn.sensor_id})
+                      {sn.location && <><br />{sn.location}</>}
+                      <br />{t('field_status')}: {sn.status}
+                      {sn.risk_level && (
+                        <><br />{t(`risk_${sn.risk_level}`)} {sn.confidence ? `(${(sn.confidence * 100).toFixed(0)}%)` : ''}</>
+                      )}
+                      {sn.water_level !== null && sn.water_level !== undefined && (
+                        <><br />{t('reading_water_level')}: {sn.water_level} m</>
+                      )}
+                      {sn.rainfall !== null && sn.rainfall !== undefined && (
+                        <><br />{t('reading_rainfall')}: {sn.rainfall} mm/h</>
+                      )}
+                      {sn.reading_recorded_at ? (
+                        <><br /><span className="text-[11px] text-slate-400">{formatDateTime(sn.reading_recorded_at)}</span></>
+                      ) : sn.last_seen ? (
+                        <><br /><span className="text-[11px] text-slate-400">{formatDateTime(sn.last_seen)}</span></>
+                      ) : null}
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+              {/* User Position Marker */}
+              {userPos && geoStatus === 'ok' && (
+                <Marker position={[userPos.lat, userPos.lng]} icon={userIcon} zIndexOffset={1000}>
+                  <Popup>
+                    <div className="text-xs space-y-1">
+                      <strong className="block text-slate-800 dark:text-slate-100">{t('map_your_location')}</strong>
+                      {areaName && <p className="text-blue-600 dark:text-blue-400 font-medium">{areaName}</p>}
+                      <p className="font-mono text-slate-500">{userPos.lat.toFixed(5)}, {userPos.lng.toFixed(5)}</p>
                     </div>
                   </Popup>
                 </Marker>
               )}
             </MapContainer>
           )}
-        </div>
+          {!loading && points.length === 0 && (
+            <p className="absolute bottom-3 left-3 right-16 z-[400] text-center text-xs bg-white/90 dark:bg-slate-800/90 rounded-lg p-2 text-slate-600 dark:text-slate-300">
+              {t('map_no_data')}
+            </p>
+          )}
+        </section>
       </div>
     </div>
   );

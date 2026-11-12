@@ -1,86 +1,74 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+
+from auth.permissions import require_auth, require_permission
 from database.connection import get_db
-from models.user import User
-from models.sos import SOS
-from models.volunteer import Volunteer
-from models.feedback import Feedback
-from models.sensor import Sensor
-from models.flood_data import FloodData, Prediction
-from models.evacuation_center import Alert, EvacuationCenter
-from auth.jwt_handler import get_current_user
+from models.evacuation_center import Alert, CenterStatus, EvacuationCenter
+from models.flood_data import FloodData
+from models.sos import ACTIVE_SOS_STATUSES, SOS, SOSStatus
+from services.prediction import latest_live_prediction
+from services.readings import latest_readings, sensor_health, water_level_change_24h
+from services.sos import scope_sos_query, serialize_sos_list
+from utils.serializers import model_to_dict
+from utils.timeutil import iso, utc_now
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("/stats")
-async def get_dashboard_stats(db: Session = Depends(get_db)):
-    """Main dashboard statistics"""
-    from datetime import datetime
-
-    total_users = db.query(User).count()
-    total_volunteers = db.query(Volunteer).count()
-    active_sos = db.query(SOS).filter(SOS.status == "pending").count()
-    total_sensors = db.query(Sensor).count()
-    online_sensors = db.query(Sensor).filter(Sensor.status == "online").count()
-    active_alerts = db.query(Alert).filter(Alert.is_active == True).count()
-    open_centers = db.query(EvacuationCenter).filter(EvacuationCenter.status == "open").count()
-    pending_feedback = db.query(Feedback).filter(Feedback.status == "pending").count()
-
-    latest_prediction = db.query(Prediction).order_by(desc(Prediction.predicted_at)).first()
-    latest_data = db.query(FloodData).order_by(desc(FloodData.recorded_at)).first()
-
+async def get_dashboard_stats(current_user=Depends(require_auth), db: Session = Depends(get_db)):
+    """
+    Main dashboard numbers. Readings are the latest real values (null when none);
+    risk comes only from live predictions; `active_sos` is scoped to what the
+    caller may see (public users: their own requests).
+    """
+    readings = latest_readings(db)
+    prediction = latest_live_prediction(db)
     return {
-        "total_users": total_users,
-        "total_volunteers": total_volunteers,
-        "active_sos": active_sos,
-        "total_sensors": total_sensors,
-        "online_sensors": online_sensors,
-        "active_alerts": active_alerts,
-        "open_evacuation_centers": open_centers,
-        "pending_feedback": pending_feedback,
-        "current_water_level": latest_data.water_level if latest_data else 0,
-        "current_rainfall": latest_data.rainfall if latest_data else 0,
-        "current_temperature": latest_data.temperature if latest_data else 0,
-        "current_humidity": latest_data.humidity if latest_data else 0,
-        "flood_risk": latest_prediction.risk_level if latest_prediction else "safe",
-        "risk_confidence": latest_prediction.confidence if latest_prediction else 0,
+        "readings": readings,
+        "water_level_change_24h": water_level_change_24h(db),
+        "risk": {
+            "level": prediction.risk_level,
+            "confidence": prediction.confidence,
+            "predicted_at": iso(prediction.predicted_at),
+        } if prediction else None,
+        "sensors": sensor_health(db),
+        "active_sos": scope_sos_query(db.query(SOS), current_user).filter(SOS.status.in_(ACTIVE_SOS_STATUSES)).count(),
+        "active_alerts": db.query(Alert).filter(Alert.is_active.is_(True)).count(),
+        "open_evacuation_centers": db.query(EvacuationCenter).filter(EvacuationCenter.status == CenterStatus.OPEN).count(),
     }
 
 
 @router.get("/water-level-trend")
-async def get_water_level_trend(hours: int = Query(24, ge=1, le=168), db: Session = Depends(get_db)):
-    from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    data = db.query(FloodData).filter(
-        FloodData.recorded_at >= cutoff
-    ).order_by(FloodData.recorded_at).all()
+async def get_water_level_trend(hours: int = Query(24, ge=1, le=168), current_user=Depends(require_auth),
+                                db: Session = Depends(get_db)):
+    """Readings in the last `hours`, oldest first. Timestamps are ISO-8601 UTC."""
+    cutoff = utc_now() - timedelta(hours=hours)
+    rows = db.query(FloodData).filter(FloodData.recorded_at >= cutoff).order_by(FloodData.recorded_at).all()
     return [
         {
-            "time": d.recorded_at.strftime("%H:%M") if d.recorded_at else "",
+            "recorded_at": iso(d.recorded_at),
             "water_level": d.water_level,
             "rainfall": d.rainfall,
             "temperature": d.temperature,
             "humidity": d.humidity,
         }
-        for d in data
+        for d in rows
     ]
 
 
 @router.get("/recent-alerts")
-async def get_recent_alerts(limit: int = 5, db: Session = Depends(get_db)):
-    return db.query(Alert).filter(Alert.is_active == True).order_by(desc(Alert.created_at)).limit(limit).all()
+async def get_recent_alerts(limit: int = Query(5, ge=1, le=50), current_user=Depends(require_auth),
+                            db: Session = Depends(get_db)):
+    alerts = db.query(Alert).filter(Alert.is_active.is_(True)).order_by(desc(Alert.created_at)).limit(limit).all()
+    return [model_to_dict(a) for a in alerts]
 
 
 @router.get("/sos-summary")
-async def get_sos_summary(db: Session = Depends(get_db)):
-    from models.sos import SOSStatus
-    pending = db.query(SOS).filter(SOS.status == SOSStatus.PENDING).count()
-    accepted = db.query(SOS).filter(SOS.status == SOSStatus.ACCEPTED).count()
-    rescued = db.query(SOS).filter(SOS.status == SOSStatus.RESCUED).count()
+async def get_sos_summary(current_user=Depends(require_permission("sos.view_all")), db: Session = Depends(get_db)):
+    counts = {s.value: db.query(SOS).filter(SOS.status == s).count() for s in SOSStatus}
     recent = db.query(SOS).order_by(desc(SOS.created_at)).limit(5).all()
-    return {
-        "pending": pending, "accepted": accepted, "rescued": rescued,
-        "recent": recent
-    }
+    return {**counts, "recent": serialize_sos_list(db, recent, current_user)}

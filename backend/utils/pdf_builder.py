@@ -11,6 +11,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
+from utils.timeutil import utc_now
 
 
 # ── Palette ────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ def build_pdf(report_type: str, data: list, period_days: int = None) -> bytes:
     story.append(Paragraph(label, title_style))
     period_text = f"Period: last {period_days} days  |  " if period_days else ""
     story.append(Paragraph(
-        f"{period_text}Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  |  "
+        f"{period_text}Generated: {utc_now().strftime('%Y-%m-%d %H:%M UTC')}  |  "
         f"Total records: {len(data)}",
         sub_style,
     ))

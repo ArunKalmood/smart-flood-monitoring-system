@@ -1,7 +1,7 @@
 import enum
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Enum as SQLEnum
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class CenterStatus(str, enum.Enum):
@@ -25,8 +25,8 @@ class EvacuationCenter(Base):
     longitude = Column(Float)
     status = Column(SQLEnum(CenterStatus), default=CenterStatus.OPEN)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
 
 class Resource(Base):
@@ -43,8 +43,8 @@ class Resource(Base):
     assigned_team = Column(String(200))
     is_available = Column(Boolean, default=True)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
 
 class Alert(Base):
@@ -60,8 +60,8 @@ class Alert(Base):
     longitude = Column(Float)
     radius_km = Column(Float)
     is_active = Column(Boolean, default=True)
-    expires_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    expires_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now, index=True)
 
 
 class Report(Base):
@@ -74,4 +74,4 @@ class Report(Base):
     file_path = Column(String(300))
     period_days = Column(Integer)
     total_records = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utc_now)

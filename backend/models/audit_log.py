@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, JSON
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class AuditLog(Base):
@@ -20,4 +20,4 @@ class AuditLog(Base):
     before      = Column(JSON,        nullable=True)   # snapshot before change
     after       = Column(JSON,        nullable=True)   # snapshot after change
     ip_address  = Column(String(45),  nullable=True)
-    created_at  = Column(DateTime,    default=datetime.utcnow, index=True)
+    created_at  = Column(UTCDateTime,    default=utc_now, index=True)

@@ -121,9 +121,80 @@
     @apply bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400;
   }
 
+  /* Form fields */
+  .field-label { @apply block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1; }
+  .field-error { @apply text-red-600 dark:text-red-400 text-xs mt-1; }
+
+  /* Public site sections (light + dark) */
+  .public-hero {
+    @apply bg-gradient-to-br from-blue-50 via-white to-cyan-50 text-slate-900
+    dark:from-slate-900 dark:via-blue-950 dark:to-slate-900 dark:text-white;
+  }
+  .public-section { @apply bg-white text-slate-900 dark:bg-slate-900 dark:text-white; }
+  .public-section-alt { @apply bg-slate-50 text-slate-900 dark:bg-slate-800 dark:text-white; }
+  .public-card {
+    @apply bg-white border border-slate-200 rounded-2xl shadow-sm
+    dark:bg-white/5 dark:border-white/10 dark:shadow-none;
+  }
+  .public-heading { @apply text-slate-900 dark:text-white; }
+  .public-muted { @apply text-slate-600 dark:text-slate-400; }
+
+  /* Auth pages (light + dark) */
+  .auth-shell {
+    @apply min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-slate-100
+    dark:from-slate-900 dark:via-blue-950 dark:to-slate-900;
+  }
+  .auth-card {
+    @apply bg-white/90 border border-slate-200 rounded-3xl p-8 shadow-xl backdrop-blur-xl
+    dark:bg-white/10 dark:border-white/20 dark:shadow-2xl;
+  }
+  .auth-title { @apply text-2xl font-bold text-slate-900 dark:text-white; }
+  .auth-muted { @apply text-slate-500 dark:text-slate-400; }
+  .auth-label { @apply block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5; }
+  .auth-input {
+    @apply w-full py-2.5 rounded-xl border text-sm
+    bg-white border-slate-300 text-slate-900 placeholder-slate-400
+    dark:bg-white/10 dark:border-white/20 dark:text-white dark:placeholder-slate-400
+    focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+  .auth-input option { @apply text-slate-900; }
+  .auth-link { @apply text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300; }
+
   /* Loading skeleton */
   .skeleton {
     @apply animate-pulse bg-slate-200 dark:bg-slate-700 rounded-lg;
+  }
+
+  /* Digital Twin Theme Tokens and Panels */
+  .dt-panel {
+    @apply bg-slate-900/90 dark:bg-[#102238]/90 backdrop-blur-xl border border-slate-700/60 dark:border-[#1E3A5F] rounded-xl shadow-xl transition-all;
+  }
+
+  .dt-panel-header {
+    @apply px-4 py-3 border-b border-slate-700/40 dark:border-[#1E3A5F]/60 flex items-center justify-between text-xs font-semibold tracking-wider uppercase text-slate-400 dark:text-cyan-400/90;
+  }
+
+  .dt-rail-item {
+    @apply relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium tracking-wide
+    text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 dark:hover:bg-[#102238] transition-all;
+  }
+
+  .dt-rail-item.active {
+    @apply text-cyan-400 bg-slate-800/80 dark:bg-[#102238] border-l-2 border-cyan-400 shadow-[inset_0_0_12px_rgba(34,211,238,0.1)];
+  }
+
+  /* Telemetry Status Badges */
+  .dt-status-live {
+    @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/30;
+  }
+  .dt-status-stale {
+    @apply bg-amber-500/10 text-amber-400 border border-amber-500/30;
+  }
+  .dt-status-offline {
+    @apply bg-rose-500/10 text-rose-400 border border-rose-500/30;
+  }
+  .dt-status-nodata {
+    @apply bg-slate-500/10 text-slate-400 border border-slate-500/30;
   }
 }
 
@@ -134,4 +205,21 @@
 .table-container {
   @apply overflow-x-auto;
   scrollbar-width: thin;
+}
+
+/* Accessibility: respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-pulse,
+  .animate-spin,
+  .animate-ping,
+  .pulse-slow,
+  .ping-slow {
+    animation: none !important;
+  }
 }

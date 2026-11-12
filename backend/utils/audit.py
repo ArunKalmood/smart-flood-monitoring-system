@@ -4,7 +4,7 @@ that needs to record admin actions.
 """
 from sqlalchemy.orm import Session
 from models.audit_log import AuditLog
-from typing import Optional, Any
+from typing import Optional
 
 
 def log_action(

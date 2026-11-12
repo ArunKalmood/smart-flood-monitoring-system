@@ -1,14 +1,25 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum, Float, Text
+from sqlalchemy import Column, Integer, String, Boolean, Enum as SQLEnum, Float, Text
 from sqlalchemy.types import JSON
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class VolunteerStatus(str, enum.Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    SUSPENDED = "suspended"
+
+
+# Allowed status changes by an approver. Suspending removes volunteer powers
+# (they are granted only while APPROVED); reinstating restores them.
+VOLUNTEER_TRANSITIONS = {
+    VolunteerStatus.PENDING: {VolunteerStatus.APPROVED, VolunteerStatus.REJECTED},
+    VolunteerStatus.APPROVED: {VolunteerStatus.SUSPENDED},
+    VolunteerStatus.SUSPENDED: {VolunteerStatus.APPROVED},
+    VolunteerStatus.REJECTED: {VolunteerStatus.APPROVED},
+}
 
 
 class Volunteer(Base):
@@ -28,5 +39,5 @@ class Volunteer(Base):
     id_document = Column(String(300))  # uploaded ID path
     status = Column(SQLEnum(VolunteerStatus), default=VolunteerStatus.PENDING)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)

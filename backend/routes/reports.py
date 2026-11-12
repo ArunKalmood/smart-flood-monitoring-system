@@ -7,10 +7,11 @@ from models.volunteer import Volunteer
 from models.feedback import Feedback
 from models.sensor import Sensor
 from models.flood_data import FloodData, Prediction
-from models.evacuation_center import Report
-from auth.jwt_handler import get_current_user
+from auth.permissions import require_permission
+from utils.serializers import SENSITIVE_COLUMNS
 from utils.pdf_builder import build_pdf
 from datetime import datetime, timedelta
+from utils.timeutil import utc_now
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -22,6 +23,8 @@ def serialize_list(items):
     for item in items:
         d = {}
         for col in item.__table__.columns:
+            if col.name in SENSITIVE_COLUMNS:
+                continue
             val = getattr(item, col.name)
             if isinstance(val, datetime):
                 val = val.isoformat()
@@ -36,7 +39,7 @@ def _build_response(report_type: str, data: list, days: int, fmt: str):
 
     if fmt == "pdf":
         pdf_bytes = build_pdf(report_type, serialized, period_days=days)
-        filename = f"{report_type}_report_{datetime.utcnow().strftime('%Y%m%d')}.pdf"
+        filename = f"{report_type}_report_{utc_now().strftime('%Y%m%d')}.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
@@ -52,7 +55,7 @@ def _build_response(report_type: str, data: list, days: int, fmt: str):
             for row in serialized:
                 rows.append(",".join(str(row.get(h, "")) for h in headers))
             csv_content = "\n".join(rows)
-        filename = f"{report_type}_report_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+        filename = f"{report_type}_report_{utc_now().strftime('%Y%m%d')}.csv"
         return Response(
             content=csv_content,
             media_type="text/csv",
@@ -69,10 +72,10 @@ async def generate_report(
     report_type: str,
     format: str = Query("json", pattern="^(json|csv|pdf)$"),
     days: int = Query(30, ge=1, le=365),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("reports.view")),
     db: Session = Depends(get_db)
 ):
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
 
     if report_type == "flood":
         data = db.query(FloodData).filter(FloodData.recorded_at >= cutoff).all()
@@ -102,7 +105,7 @@ async def generate_report(
 
 @router.get("/summary")
 async def get_report_summary(
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("reports.view")),
     db: Session = Depends(get_db)
 ):
     return {

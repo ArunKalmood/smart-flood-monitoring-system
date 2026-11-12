@@ -29,5 +29,7 @@ def get_db():
 
 
 def create_tables():
-    from models import user, admin, volunteer, sensor, flood_data, sos, feedback, notification, evacuation_center, audit_log
+    import models  # noqa: F401  (registers every table on Base.metadata)
+    from database.migrations import run_migrations
     Base.metadata.create_all(bind=engine)
+    run_migrations(engine)

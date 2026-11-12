@@ -25,6 +25,9 @@ from routes.reports import router as report_router
 from routes.genai import router as genai_router
 from routes.resources import evac_router, resource_router, alert_router
 from routes.audit import router as audit_router
+from routes.public import router as public_router
+from slowapi.errors import RateLimitExceeded
+from utils.rate_limit import limiter, rate_limit_exceeded_handler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,7 +36,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-_DESCRIPTION = """
+_DESCRIPTION = r"""
 ## FloodMonitor — Smart Flood Monitoring & Early Warning System
 
 **Base URL:** `/api`  |  **Auth:** Bearer JWT (obtain via `/api/auth/login` or `/api/auth/admin/login`)
@@ -41,12 +44,13 @@ _DESCRIPTION = """
 ### Feature modules
 | Module | Prefix | Auth required |
 |--------|--------|---------------|
-| Authentication | `/auth` | Partial |
-| Sensors & IoT | `/sensors` | No (ingest), Yes (admin) |
-| Flood Prediction | `/predictions` | No |
-| SOS Emergency | `/sos` | No (submit), Yes (update) |
-| Feedback | `/feedback` | No (submit), Yes (update) |
-| Volunteers | `/volunteers` | No (register), Yes (approve) |
+| Public summary | `/public` | No (aggregates only) |
+| Authentication | `/auth` | Partial; invites need super_admin |
+| Sensors & IoT | `/sensors` | `X-Device-Key` (ingest), Yes (read/admin) |
+| Flood Prediction | `/predictions` | Yes |
+| SOS Emergency | `/sos` | Optional (submit), Yes (read, scoped by role), Yes + role (update) |
+| Feedback | `/feedback` | Optional (submit), Yes (read, scoped by role), Yes + role (update) |
+| Volunteers | `/volunteers` | No (register), Yes + role (view/approve) |
 | Notifications | `/notifications` | Yes |
 | Dashboard | `/dashboard` | Yes |
 | Reports | `/reports` | Yes — supports `?format=json\|csv\|pdf` |
@@ -61,6 +65,7 @@ _DESCRIPTION = """
 """
 
 _TAGS_METADATA = [
+    {"name": "Public",                  "description": "Unauthenticated, aggregated, non-personal data for the home page."},
     {"name": "Authentication",          "description": "User & admin registration, login, JWT refresh, password management."},
     {"name": "Sensors & IoT",           "description": "IoT data ingestion, sensor registry, historical flood-data queries."},
     {"name": "Flood Prediction",        "description": "Rule-based (and future ML) flood risk scoring."},
@@ -89,6 +94,10 @@ app = FastAPI(
     license_info={"name": "MIT"},
     lifespan=lifespan,
 )
+
+# Rate limiting (per client IP; see utils/rate_limit.py)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # CORS
 app.add_middleware(
@@ -120,6 +129,7 @@ app.include_router(evac_router, prefix=API_PREFIX)
 app.include_router(resource_router, prefix=API_PREFIX)
 app.include_router(alert_router, prefix=API_PREFIX)
 app.include_router(audit_router, prefix=API_PREFIX)
+app.include_router(public_router, prefix=API_PREFIX)
 
 
 @app.get("/api/health")

@@ -1,53 +1,61 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { notificationAPI } from '../services/api';
 import { useAuth } from './AuthContext';
+import { toastError } from '../utils/toast';
+
+const POLL_MS = 30000;
+const EMPTY = { notifications: [], total: 0, unread_count: 0 };
 
 const NotificationContext = createContext(null);
 export const useNotifications = () => useContext(NotificationContext);
 
+/** Notifications come only from the API; counts are the API's `total` / `unread_count`. */
 export function NotificationProvider({ children }) {
   const { isAuthenticated } = useAuth();
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount]     = useState(0);
+  const [data, setData] = useState(EMPTY);
+  const [loaded, setLoaded] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setData(EMPTY);
+      return;
+    }
     try {
-      const res = await notificationAPI.getAll({});
-      setNotifications(res.data.notifications || []);
-      setUnreadCount(res.data.unread_count || 0);
-    } catch {}
+      const res = await notificationAPI.getAll({ limit: 100 });
+      setData({ ...EMPTY, ...res.data });
+    } catch {
+      // keep the last known list; the page shows its own error on manual refresh
+    } finally {
+      setLoaded(true);
+    }
   }, [isAuthenticated]);
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // poll every 30s
+    if (!isAuthenticated) return undefined;
+    const interval = setInterval(fetchNotifications, POLL_MS);
     return () => clearInterval(interval);
+  }, [fetchNotifications, isAuthenticated]);
+
+  const mutate = useCallback(async (request) => {
+    try {
+      await request();
+    } catch (err) {
+      toastError(err);
+    }
+    await fetchNotifications(); // counts always come from the server
   }, [fetchNotifications]);
 
-  const markRead = async (id) => {
-    await notificationAPI.markRead(id);
-    setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
-    setUnreadCount(c => Math.max(0, c - 1));
+  const value = {
+    notifications: data.notifications,
+    total: data.total,
+    unreadCount: data.unread_count,
+    loaded,
+    fetchNotifications,
+    markRead: (id) => mutate(() => notificationAPI.markRead(id)),
+    markAllRead: () => mutate(() => notificationAPI.markAllRead()),
+    removeNotification: (id) => mutate(() => notificationAPI.delete(id)),
   };
 
-  const markAllRead = async () => {
-    await notificationAPI.markAllRead();
-    setNotifications(n => n.map(x => ({ ...x, is_read: true })));
-    setUnreadCount(0);
-  };
-
-  const removeNotification = async (id) => {
-    await notificationAPI.delete(id);
-    setNotifications(n => n.filter(x => x.id !== id));
-  };
-
-  return (
-    <NotificationContext.Provider value={{
-      notifications, unreadCount, fetchNotifications,
-      markRead, markAllRead, removeNotification,
-    }}>
-      {children}
-    </NotificationContext.Provider>
-  );
+  return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }

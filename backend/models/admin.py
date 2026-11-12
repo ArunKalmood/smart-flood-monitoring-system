@@ -1,8 +1,9 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Boolean, Enum as SQLEnum
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import JSON
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class AdminRole(str, enum.Enum):
@@ -22,8 +23,11 @@ class Admin(Base):
     department = Column(String(150))
     role = Column(SQLEnum(AdminRole), default=AdminRole.DISTRICT_ADMIN, nullable=False)
     is_active = Column(Boolean, default=True)
-    last_login = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    language = Column(String(10), default="en")
+    theme = Column(String(10), default="light")
+    notification_prefs = Column(JSON)  # see utils/notification_prefs.py; None = defaults
+    last_login = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
     notifications = relationship("Notification", back_populates="admin", cascade="all, delete-orphan")

@@ -1,7 +1,7 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Boolean, Float, Enum as SQLEnum
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class SensorStatus(str, enum.Enum):
@@ -9,6 +9,24 @@ class SensorStatus(str, enum.Enum):
     OFFLINE = "offline"
     MAINTENANCE = "maintenance"
     FAULT = "fault"
+
+
+class SensorType(str, enum.Enum):
+    WATER_LEVEL = "water_level"
+    RAINFALL = "rainfall"
+    TEMPERATURE = "temperature"
+    HUMIDITY = "humidity"
+    FLOW = "flow"
+
+
+# Which reading (flood_data column) a sensor of each type reports as its current value.
+READING_FIELD_FOR_TYPE = {
+    SensorType.WATER_LEVEL.value: "water_level",
+    SensorType.RAINFALL.value: "rainfall",
+    SensorType.TEMPERATURE.value: "temperature",
+    SensorType.HUMIDITY.value: "humidity",
+    SensorType.FLOW.value: "river_flow",
+}
 
 
 class Sensor(Base):
@@ -26,8 +44,9 @@ class Sensor(Base):
     battery_level = Column(Float)
     status = Column(SQLEnum(SensorStatus), default=SensorStatus.OFFLINE)
     is_active = Column(Boolean, default=True)
-    last_seen = Column(DateTime)
+    last_seen = Column(UTCDateTime)
     firmware_version = Column(String(20))
-    installed_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    device_key_hash = Column(String(64), unique=True, index=True)  # sha256 of the X-Device-Key; never returned by the API
+    installed_at = Column(UTCDateTime, default=utc_now)
+    created_at = Column(UTCDateTime, default=utc_now)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now)

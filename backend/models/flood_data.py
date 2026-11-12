@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, Text
+from sqlalchemy import Column, Integer, Float, ForeignKey, String, Text
 from database.connection import Base
-from datetime import datetime
+from utils.timeutil import UTCDateTime, utc_now
 
 
 class FloodData(Base):
@@ -15,7 +15,7 @@ class FloodData(Base):
     river_flow = Column(Float)
     latitude = Column(Float)
     longitude = Column(Float)
-    recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
+    recorded_at = Column(UTCDateTime, default=utc_now, index=True)
 
 
 class Prediction(Base):
@@ -29,4 +29,8 @@ class Prediction(Base):
     time_to_flood_hours = Column(Float)
     model_version = Column(String(50), default="rule_based_v1")
     features_used = Column(Text)
-    predicted_at = Column(DateTime, default=datetime.utcnow, index=True)
+    score = Column(Integer)
+    # "live" = computed from sensor data; "simulation" = manual what-if run.
+    # Only live predictions may drive the dashboard, public summary or alerts.
+    source = Column(String(20), default="live", nullable=False, index=True)
+    predicted_at = Column(UTCDateTime, default=utc_now, index=True)

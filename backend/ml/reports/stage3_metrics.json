@@ -1,0 +1,98 @@
+{
+  "model_file": "lstm-stage3-20261014.1719.keras",
+  "timestamp": "20261014.1719",
+  "critical_multiplier": 2.2,
+  "val_tuning": {
+    "recall": 0.9563025210084034,
+    "precision": 0.9436152570480929,
+    "multiplier": 2.200000000000001
+  },
+  "test_plain": {
+    "accuracy": 0.9676,
+    "macro_f1": 0.8832,
+    "macro_precision": 0.8549,
+    "macro_recall": 0.923,
+    "per_class": {
+      "normal": {
+        "precision": 0.9982,
+        "recall": 0.9755,
+        "f1": 0.9867,
+        "support": 9980
+      },
+      "warning": {
+        "precision": 0.6711,
+        "recall": 0.9023,
+        "f1": 0.7697,
+        "support": 665
+      },
+      "critical": {
+        "precision": 0.8953,
+        "recall": 0.8914,
+        "f1": 0.8933,
+        "support": 451
+      }
+    },
+    "confusion_matrix": [
+      [
+        9735,
+        245,
+        0
+      ],
+      [
+        18,
+        600,
+        47
+      ],
+      [
+        0,
+        49,
+        402
+      ]
+    ],
+    "critical_predicted_as_normal": 0
+  },
+  "test_adjusted": {
+    "accuracy": 0.9675,
+    "macro_f1": 0.881,
+    "macro_precision": 0.8406,
+    "macro_recall": 0.9303,
+    "per_class": {
+      "normal": {
+        "precision": 0.9982,
+        "recall": 0.9755,
+        "f1": 0.9867,
+        "support": 9980
+      },
+      "warning": {
+        "precision": 0.6849,
+        "recall": 0.8466,
+        "f1": 0.7572,
+        "support": 665
+      },
+      "critical": {
+        "precision": 0.8388,
+        "recall": 0.969,
+        "f1": 0.8992,
+        "support": 451
+      }
+    },
+    "confusion_matrix": [
+      [
+        9735,
+        245,
+        0
+      ],
+      [
+        18,
+        563,
+        84
+      ],
+      [
+        0,
+        14,
+        437
+      ]
+    ],
+    "critical_predicted_as_normal": 0
+  }
+}

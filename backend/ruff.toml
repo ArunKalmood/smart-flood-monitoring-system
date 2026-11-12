@@ -1,0 +1,13 @@
+# Lint config: `venv/bin/ruff check .`
+line-length = 120
+extend-exclude = ["venv"]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # long lines are allowed (tables of constants, long messages)
+
+[lint.per-file-ignores]
+# conftest must set environment variables before importing the app.
+"tests/conftest.py" = ["E402"]
+# scripts import _bootstrap (sys.path / cwd setup) before app modules.
+"scripts/*.py" = ["E402"]

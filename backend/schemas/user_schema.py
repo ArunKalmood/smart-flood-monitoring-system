@@ -1,35 +1,29 @@
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
-from typing import Optional
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from typing import Annotated, Literal, Optional
+
+from schemas.validators import OptionalPhone, Password, Phone, PinCode, optional_text
 from models.user import UserRole
 from models.admin import AdminRole
-from datetime import datetime
 
 
 class UserRegister(BaseModel):
-    full_name: str
+    full_name: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
-    phone: str
-    password: str
+    phone: Phone
+    password: Password
     confirm_password: str
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pin_code: Optional[str] = None
+    address: optional_text(300) = None
+    city: optional_text(100) = None
+    state: optional_text(100) = None
+    pin_code: PinCode = None
     role: UserRole = UserRole.PUBLIC
 
-    @field_validator("password")
+    @field_validator("role")
     @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
-
-    @field_validator("phone")
-    @classmethod
-    def phone_valid(cls, v: str) -> str:
-        digits = v.replace("+", "").replace("-", "").replace(" ", "")
-        if not digits.isdigit() or len(digits) < 10:
-            raise ValueError("Invalid phone number")
+    def role_self_assignable(cls, v: UserRole) -> UserRole:
+        # Elevated roles are granted by a super_admin, never self-selected.
+        if v not in (UserRole.PUBLIC, UserRole.VOLUNTEER):
+            raise ValueError("Only 'public_user' or 'volunteer' can be chosen at registration")
         return v
 
     @model_validator(mode="after")
@@ -46,13 +40,13 @@ class UserLogin(BaseModel):
 
 
 class AdminRegister(BaseModel):
+    # The invite decides the role; any client-sent "role" is ignored.
     registration_token: str
-    name: str
+    name: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
-    password: str
+    password: Password
     confirm_password: str
-    department: Optional[str] = None
-    role: AdminRole = AdminRole.DISTRICT_ADMIN
+    department: optional_text(150) = None
 
     @model_validator(mode="after")
     def passwords_match(self) -> "AdminRegister":
@@ -79,25 +73,45 @@ class ForgotPassword(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str
+    new_password: Password
 
-    @field_validator("new_password")
-    @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
+
+class NotificationPrefs(BaseModel):
+    flood_warnings: bool = True
+    sos_updates: bool = True
+    volunteer_updates: bool = True
+    weather_alerts: bool = True
+    system_messages: bool = True
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
-    name: Optional[str] = None
-    department: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    pin_code: Optional[str] = None
-    language: Optional[str] = None
-    theme: Optional[str] = None
-    notification_enabled: Optional[bool] = None
+    full_name: Optional[Annotated[str, Field(min_length=2, max_length=150)]] = None
+    name: Optional[Annotated[str, Field(min_length=2, max_length=150)]] = None
+    department: optional_text(150) = None
+    phone: OptionalPhone = None
+    address: optional_text(300) = None
+    city: optional_text(100) = None
+    state: optional_text(100) = None
+    pin_code: PinCode = None
+    language: Optional[Literal["en", "hi", "mr", "te", "ta", "kn"]] = None
+    theme: Optional[Literal["light", "dark", "system"]] = None
+    notification_prefs: Optional[NotificationPrefs] = None
+
+
+class VerifyAdminToken(BaseModel):
+    token: str
+
+
+class AdminInviteCreate(BaseModel):
+    role: AdminRole
+    email: Optional[EmailStr] = None
+    expires_hours: Optional[int] = Field(None, ge=1, le=24 * 30)
+
+
+class UserRoleChange(BaseModel):
+    role: UserRole
+
+
+class GoogleAuthRequest(BaseModel):
+    credential: str
+

@@ -1,118 +1,84 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, Waves, LogIn, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Waves, LogIn, PhoneCall } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import toast from 'react-hot-toast';
+import { useLanguage } from '../../context/LanguageContext';
+import AuthCard from '../../components/auth/AuthCard';
+import { AuthField, PasswordField } from '../../components/auth/AuthField';
+import GoogleSignInButton from '../../components/auth/GoogleSignInButton';
+import SubmitButton from '../../components/common/SubmitButton';
+import { applyFieldErrors } from '../../utils/apiError';
+import { emailRules, required } from '../../utils/validation';
+import toast, { toastError } from '../../utils/toast';
 
 export default function Login() {
-  const { login } = useAuth();
-  const navigate   = useNavigate();
-  const [showPw, setShowPw]   = useState(false);
+  const { login, googleLogin } = useAuth();
+  const { t } = useLanguage();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const { register, handleSubmit, setError, formState: { errors } } = useForm({ defaultValues: { remember_me: false } });
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
-    defaultValues: { remember_me: false }
-  });
+  const onGoogleCredential = async (credential) => {
+    setLoading(true);
+    try {
+      const user = await googleLogin(credential);
+      toast.success(t('auth_welcome_back', { name: user.full_name || user.name }));
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      toastError(err, t('auth_google_login_failed'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onSubmit = async (data) => {
     setLoading(true);
     try {
       const user = await login(data);
-      toast.success(`Welcome back, ${user.full_name || user.name}!`);
-      navigate('/dashboard');
+      toast.success(t('auth_welcome_back', { name: user.full_name || user.name }));
+      navigate('/dashboard', { replace: true });
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Login failed. Please check your credentials.');
+      applyFieldErrors(err, setError, ['email', 'password']);
+      toastError(err, t('auth_login_failed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-md"
-    >
-      <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-3">
-            <Waves className="w-8 h-8 text-blue-400" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
-          <p className="text-slate-400 text-sm mt-1">Sign in to FloodMonitor</p>
+    <AuthCard icon={Waves} title={t('auth_welcome_title')} subtitle={t('auth_sign_in_subtitle')}>
+      <a href="tel:112" className="mb-5 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300">
+        <PhoneCall className="w-4 h-4 flex-shrink-0" aria-hidden="true" /> {t('auth_emergency_banner')}
+      </a>
+
+      <GoogleSignInButton onCredential={onGoogleCredential} disabled={loading} mode="login" />
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <AuthField id="login-email" type="email" autoComplete="email" label={t('field_email')} icon={Mail}
+          placeholder="you@example.com" error={errors.email} {...register('email', emailRules())} />
+        <PasswordField id="login-password" autoComplete="current-password" label={t('field_password')} icon={Lock}
+          placeholder="••••••••" error={errors.password} {...register('password', required())} />
+
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600 dark:text-slate-300">
+            <input type="checkbox" {...register('remember_me')} className="w-4 h-4 rounded accent-blue-500" />
+            {t('auth_remember_me')}
+          </label>
+          <Link to="/forgot-password" className="text-sm auth-link">{t('auth_forgot_link')}</Link>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Email */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Email Address</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="email"
-                {...register('email', {
-                  required: 'Email is required',
-                  pattern: { value: /^\S+@\S+\.\S+$/, message: 'Invalid email' }
-                })}
-                placeholder="you@example.com"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-            {errors.email && <p className="text-red-400 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.email.message}</p>}
-          </div>
+        <SubmitButton loading={loading} loadingText={t('auth_signing_in')} className="btn-primary w-full mt-2">
+          <LogIn className="w-4 h-4" aria-hidden="true" /> {t('auth_sign_in')}
+        </SubmitButton>
+      </form>
 
-          {/* Password */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type={showPw ? 'text' : 'password'}
-                {...register('password', { required: 'Password is required', minLength: { value: 8, message: 'Min 8 characters' } })}
-                placeholder="••••••••"
-                className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
-                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {errors.password && <p className="text-red-400 text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors.password.message}</p>}
-          </div>
-
-          {/* Remember + Forgot */}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" {...register('remember_me')} className="w-4 h-4 rounded accent-blue-500" />
-              <span className="text-sm text-slate-300">Remember me</span>
-            </label>
-            <Link to="/forgot-password" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-              Forgot password?
-            </Link>
-          </div>
-
-          <button type="submit" disabled={loading} className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2">
-            {loading ? (
-              <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Signing in...</>
-            ) : (
-              <><LogIn className="w-4 h-4" /> Sign In</>
-            )}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-slate-400 mt-6">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">Sign up</Link>
-        </p>
-
-        <div className="border-t border-white/10 mt-4 pt-4 flex flex-col gap-2 text-center">
-          <Link to="/admin/login" className="text-xs text-slate-500 hover:text-slate-400 transition-colors">
-            Admin / Government Login →
-          </Link>
-        </div>
+      <p className="text-center text-sm auth-muted mt-6">
+        {t('auth_no_account')} <Link to="/register" className="auth-link font-medium">{t('auth_sign_up')}</Link>
+      </p>
+      <div className="border-t border-slate-200 dark:border-white/10 mt-4 pt-4 text-center">
+        <Link to="/admin/login" className="text-xs auth-muted hover:text-slate-700 dark:hover:text-slate-300">{t('auth_admin_login_link')}</Link>
       </div>
-    </motion.div>
+    </AuthCard>
   );
 }

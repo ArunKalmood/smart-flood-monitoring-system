@@ -9,7 +9,7 @@ class FloodPredictor:
     """
     Future ML model wrapper.
     Replace rule-based logic in routes/predictions.py with this service.
-    
+
     Training data format: [water_level, rainfall, temperature, humidity, river_flow]
     Supported models: scikit-learn, XGBoost, TensorFlow, PyTorch
     """

@@ -25,6 +25,24 @@ module.exports = {
         glass: {
           light: "rgba(255,255,255,0.15)",
           dark: "rgba(0,0,0,0.2)"
+        },
+        dt: {
+          bg: "#07111F",
+          bg2: "#0B1728",
+          panel: "#102238",
+          panelGlass: "rgba(16, 34, 56, 0.85)",
+          border: "#1E3A5F",
+          borderBright: "#2A4E7F",
+          cyan: "#22D3EE",
+          cyanGlow: "rgba(34, 211, 238, 0.2)",
+          blue: "#3B82F6",
+          blueGlow: "rgba(59, 130, 246, 0.25)",
+          text: "#F8FAFC",
+          muted: "#94A3B8",
+          subtle: "#64748B",
+          safe: "#10B981",
+          warning: "#F59E0B",
+          danger: "#EF4444",
         }
       },
       fontFamily: {

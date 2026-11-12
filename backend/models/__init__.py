@@ -9,10 +9,11 @@ from models.feedback import Feedback
 from models.notification import Notification
 from models.evacuation_center import EvacuationCenter, Resource, Alert, Report
 from models.audit_log import AuditLog
+from models.admin_invite import AdminInvite
 
 __all__ = [
     "User", "Admin", "Volunteer", "Sensor",
     "FloodData", "Prediction", "SOS", "Feedback",
     "Notification", "EvacuationCenter", "Resource", "Alert", "Report",
-    "AuditLog",
+    "AuditLog", "AdminInvite",
 ]

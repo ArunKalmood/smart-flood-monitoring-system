@@ -1,0 +1,238 @@
+{
+  "winner_variant": "var2",
+  "winner_model_file": "lstm-stage3-v2-var2-20261014.1812.keras",
+  "window_length": 36,
+  "features_count": 8,
+  "feature_names": [
+    "dist_cm_filled",
+    "dist_missing",
+    "dist_sentinel",
+    "rain_adc",
+    "rain_digital_high",
+    "dist_diff",
+    "dist_rolling_med_3",
+    "steps_since_last_valid_dist"
+  ],
+  "calibrated_critical_multiplier": 1.1,
+  "calibrated_test_critical_recall_at_m_1_10": 0.9247,
+  "warm_up_fix": "Left-padded first 35 steps with event's row 0 instead of skipping predictions",
+  "validation_summary_all_variants": [
+    {
+      "variant": "var1",
+      "name": "Var 1 (8 feat, win 24)",
+      "model_file": "lstm-stage3-v2-var1-20261014.1812.keras",
+      "window": 24,
+      "plain_accuracy": 0.9704,
+      "plain_macro_f1": 0.885,
+      "plain_critical_recall": 0.9244,
+      "plain_critical_precision": 0.9804,
+      "calibrated_multiplier": 1.6,
+      "calibrated_accuracy": 0.9708,
+      "calibrated_macro_f1": 0.8867,
+      "calibrated_critical_recall": 0.9513,
+      "calibrated_critical_precision": 0.9642
+    },
+    {
+      "variant": "var2",
+      "name": "Var 2 (8 feat, win 36)",
+      "model_file": "lstm-stage3-v2-var2-20261014.1812.keras",
+      "window": 36,
+      "plain_accuracy": 0.9798,
+      "plain_macro_f1": 0.9144,
+      "plain_critical_recall": 0.9566,
+      "plain_critical_precision": 0.9787,
+      "calibrated_multiplier": 1.1,
+      "calibrated_accuracy": 0.98,
+      "calibrated_macro_f1": 0.916,
+      "calibrated_critical_recall": 0.9618,
+      "calibrated_critical_precision": 0.9788
+    },
+    {
+      "variant": "var3",
+      "name": "Var 3 (Var 1, crit wt x2)",
+      "model_file": "lstm-stage3-v2-var3-20261014.1812.keras",
+      "window": 24,
+      "plain_accuracy": 0.9716,
+      "plain_macro_f1": 0.8873,
+      "plain_critical_recall": 0.9462,
+      "plain_critical_precision": 0.9674,
+      "calibrated_multiplier": 1.2,
+      "calibrated_accuracy": 0.9715,
+      "calibrated_macro_f1": 0.8862,
+      "calibrated_critical_recall": 0.9529,
+      "calibrated_critical_precision": 0.9594
+    },
+    {
+      "variant": "var4",
+      "name": "Var 4 (Var 1, GRU(64))",
+      "model_file": "lstm-stage3-v2-var4-20261014.1812.keras",
+      "window": 24,
+      "plain_accuracy": 0.9727,
+      "plain_macro_f1": 0.8946,
+      "plain_critical_recall": 0.9311,
+      "plain_critical_precision": 0.9893,
+      "calibrated_multiplier": 1.85,
+      "calibrated_accuracy": 0.9726,
+      "calibrated_macro_f1": 0.8924,
+      "calibrated_critical_recall": 0.9529,
+      "calibrated_critical_precision": 0.9643
+    }
+  ],
+  "test_plain": {
+    "accuracy": 0.9815,
+    "macro_f1": 0.9251,
+    "macro_precision": 0.9091,
+    "macro_recall": 0.9449,
+    "per_class": {
+      "normal": {
+        "precision": 0.9981,
+        "recall": 0.9879,
+        "f1": 0.993,
+        "support": 8946
+      },
+      "warning": {
+        "precision": 0.7893,
+        "recall": 0.9268,
+        "f1": 0.8526,
+        "support": 574
+      },
+      "critical": {
+        "precision": 0.9399,
+        "recall": 0.92,
+        "f1": 0.9298,
+        "support": 425
+      }
+    },
+    "confusion_matrix": [
+      [
+        8838,
+        108,
+        0
+      ],
+      [
+        17,
+        532,
+        25
+      ],
+      [
+        0,
+        34,
+        391
+      ]
+    ],
+    "critical_predicted_as_normal": 0
+  },
+  "test_adjusted": {
+    "accuracy": 0.9817,
+    "macro_f1": 0.9264,
+    "macro_precision": 0.91,
+    "macro_recall": 0.9465,
+    "per_class": {
+      "normal": {
+        "precision": 0.9981,
+        "recall": 0.9879,
+        "f1": 0.993,
+        "support": 8946
+      },
+      "warning": {
+        "precision": 0.7917,
+        "recall": 0.9268,
+        "f1": 0.8539,
+        "support": 574
+      },
+      "critical": {
+        "precision": 0.9402,
+        "recall": 0.9247,
+        "f1": 0.9324,
+        "support": 425
+      }
+    },
+    "confusion_matrix": [
+      [
+        8838,
+        108,
+        0
+      ],
+      [
+        17,
+        532,
+        25
+      ],
+      [
+        0,
+        32,
+        393
+      ]
+    ],
+    "critical_predicted_as_normal": 0
+  },
+  "test_comparison_vs_v1": {
+    "plain": {
+      "accuracy": {
+        "v1": 0.9676,
+        "v2": 0.9815
+      },
+      "macro_f1": {
+        "v1": 0.8832,
+        "v2": 0.9251
+      },
+      "critical_recall": {
+        "v1": 0.8914,
+        "v2": 0.92
+      },
+      "critical_precision": {
+        "v1": 0.8953,
+        "v2": 0.9399
+      }
+    },
+    "adjusted": {
+      "accuracy": {
+        "v1": 0.9675,
+        "v2": 0.9817
+      },
+      "macro_f1": {
+        "v1": 0.881,
+        "v2": 0.9264
+      },
+      "critical_recall": {
+        "v1": 0.969,
+        "v2": 0.9247
+      },
+      "critical_precision": {
+        "v1": 0.8388,
+        "v2": 0.9402
+      }
+    }
+  },
+  "lead_time_test_summary": {
+    "overall_mean_warning_lead_time_padded_s": -1.25,
+    "overall_mean_warning_lead_time_unpadded_s": -113.23529411764706,
+    "warning_lead_times_breakdown": {
+      "events_starting_at_warning": {
+        "total_events": 31,
+        "signaled_events_count": 25,
+        "mean_lead_time_padded_s": -14.8,
+        "median_lead_time_padded_s": 0.0,
+        "mean_lead_time_unpadded_s": -196.0,
+        "median_lead_time_unpadded_s": -175.0
+      },
+      "events_transitioning_during_run": {
+        "total_events": 7,
+        "signaled_events_count": 7,
+        "mean_lead_time_padded_s": 47.142857142857146,
+        "median_lead_time_padded_s": 45.0,
+        "mean_lead_time_unpadded_s": 5.0,
+        "median_lead_time_unpadded_s": 15.0
+      }
+    },
+    "mean_critical_lead_time_padded_plain_s": 17.77777777777778,
+    "mean_critical_lead_time_padded_adj_s": 17.77777777777778,
+    "false_alarms_normal_events": {
+      "firmware": 16,
+      "simple_rule": 44,
+      "stage3_v2_padded": 3,
+      "stage3_v2_unpadded": 2,
+      "total_normal_events": 52
+    }
+  }
+}

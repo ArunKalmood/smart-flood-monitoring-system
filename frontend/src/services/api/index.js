@@ -1,5 +1,7 @@
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import toast from '../../utils/toast';
+import { translate } from '../../i18n';
+import { utcOffsetMinutes } from '../../utils/datetime';
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
@@ -16,158 +18,148 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle global errors
+const AUTH_PAGES = ['/login', '/admin/login', '/register', '/admin/register', '/forgot-password'];
+
+// Session expiry and server errors are handled once, here. Pages show the
+// specific message for everything else via getErrorMessage().
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
-      const stored = localStorage.getItem('user');
-      const storedUser = stored ? JSON.parse(stored) : null;
+    const status = error.response?.status;
+    const onAuthPage = AUTH_PAGES.includes(window.location.pathname);
+    if (status === 401 && !onAuthPage && localStorage.getItem('access_token')) {
+      let wasAdmin = false;
+      try {
+        wasAdmin = JSON.parse(localStorage.getItem('user') || 'null')?.user_type === 'admin';
+      } catch {
+        wasAdmin = false;
+      }
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('user');
-      if (!window.location.pathname.includes('/login')) {
-        const target = storedUser?.user_type === 'admin' ? '/admin/login' : '/login';
-        window.location.href = target;
-      }
+      window.location.href = wasAdmin ? '/admin/login' : '/login';
     }
-    if (error.response?.status === 403) {
-      toast.error('Access denied. Insufficient permissions.');
-    }
-    if (error.response?.status === 500) {
-      toast.error('Server error. Please try again.');
-    }
+    if (status === 403) toast.error(translate('error_forbidden'), { id: 'api-403' });
+    if (status >= 500) toast.error(translate('error_server'), { id: 'api-500' });
     return Promise.reject(error);
   }
 );
 
-// Auth APIs
+const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
+
 export const authAPI = {
-  login:           (data) => api.post('/auth/login', data),
-  register:        (data) => api.post('/auth/register', data),
-  adminLogin:      (data) => api.post('/auth/admin/login', data),
-  adminRegister:   (data) => api.post('/auth/admin/register', data),
-  verifyToken:     (data) => api.post('/auth/verify-admin-token', data),
-  me:              ()     => api.get('/auth/me'),
-  forgotPassword:  (data) => api.post('/auth/forgot-password', data),
-  changePassword:  (data) => api.post('/auth/change-password', data),
+  login:             (data) => api.post('/auth/login', data),
+  register:          (data) => api.post('/auth/register', data),
+  adminLogin:        (data) => api.post('/auth/admin/login', data),
+  adminRegister:     (data) => api.post('/auth/admin/register', data),
+  verifyToken:       (data) => api.post('/auth/verify-admin-token', data),
+  me:                ()     => api.get('/auth/me'),
+  forgotPassword:    (data) => api.post('/auth/forgot-password', data),
+  changePassword:    (data) => api.post('/auth/change-password', data),
+  googleLogin:       (credential) => api.post('/auth/google', { credential }),
 };
 
-// Dashboard APIs
+// Public (no login): aggregated, non-personal numbers for the home page
+export const publicAPI = {
+  summary: () => api.get('/public/summary'),
+};
+
 export const dashboardAPI = {
-  getStats:          () => api.get('/dashboard/stats'),
-  getWaterTrend:     (h) => api.get(`/dashboard/water-level-trend?hours=${h}`),
-  getRecentAlerts:   ()  => api.get('/dashboard/recent-alerts'),
-  getSOSSummary:     ()  => api.get('/dashboard/sos-summary'),
+  getStats:        ()      => api.get('/dashboard/stats'),
+  getWaterTrend:   (hours) => api.get('/dashboard/water-level-trend', { params: { hours } }),
+  getRecentAlerts: ()      => api.get('/dashboard/recent-alerts'),
 };
 
-// Sensor APIs
 export const sensorAPI = {
-  getAll:        ()      => api.get('/sensors/'),
-  getDashboard:  ()      => api.get('/sensors/dashboard'),
-  getById:       (id)    => api.get(`/sensors/${id}`),
-  ingestData:    (data)  => api.post('/sensors/data', data),
-  getHistory:    (h)     => api.get(`/sensors/data/history?hours=${h}`),
+  getAll:     ()                => api.get('/sensors/'),
+  getHistory: (sensorId, hours) => api.get('/sensors/data/history', { params: { sensor_id: sensorId, hours } }),
 };
 
-// Prediction APIs
 export const predictionAPI = {
-  predict:     (data)   => api.post('/predictions/predict', data),
-  getLatest:   (n)      => api.get(`/predictions/latest?limit=${n || 10}`),
-  getHistory:  ()       => api.get('/predictions/history'),
-  getStats:    ()       => api.get('/predictions/stats'),
+  simulate:   (data)  => api.post('/predictions/predict', data),
+  getHistory: (hours) => api.get('/predictions/history', { params: { hours } }),
+  getDaily:   (days)  => api.get('/predictions/daily', { params: { days, utc_offset_minutes: utcOffsetMinutes() } }),
+  getStats:   (days)  => api.get('/predictions/stats', { params: { days } }),
 };
 
-// SOS APIs
 export const sosAPI = {
-  submit:      (formData) => api.post('/sos/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  getAll:      (params)   => api.get('/sos/', { params }),
-  getMapData:  ()         => api.get('/sos/map-data'),
-  getStats:    ()         => api.get('/sos/stats'),
-  getById:     (id)       => api.get(`/sos/${id}`),
-  updateStatus:(id, data) => api.patch(`/sos/${id}/status`, data),
+  submit:       (formData) => api.post('/sos/submit', formData, multipart),
+  getAll:       (params)   => api.get('/sos/', { params }),
+  getMapData:   ()         => api.get('/sos/map-data'),
+  getStats:     ()         => api.get('/sos/stats'),
+  getHistory:   (id)       => api.get(`/sos/${id}/history`),
+  updateStatus: (id, data) => api.patch(`/sos/${id}/status`, data),
 };
 
-// Feedback APIs
 export const feedbackAPI = {
-  submit:   (formData) => api.post('/feedback/submit', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  submit:   (formData) => api.post('/feedback/submit', formData, multipart),
   getAll:   (params)   => api.get('/feedback/', { params }),
-  getById:  (id)       => api.get(`/feedback/${id}`),
   update:   (id, data) => api.patch(`/feedback/${id}`, data),
   getStats: ()         => api.get('/feedback/stats/summary'),
 };
 
-// Volunteer APIs
 export const volunteerAPI = {
-  register:      (data)       => api.post('/volunteers/register', data),
-  getAll:        (params)     => api.get('/volunteers/', { params }),
-  getStats:      ()           => api.get('/volunteers/stats'),
-  updateStatus:  (id, status) => api.patch(`/volunteers/${id}/status?status=${status}`),
+  register:     (data)       => api.post('/volunteers/register', data),
+  getAll:       (params)     => api.get('/volunteers/', { params }),
+  getStats:     ()           => api.get('/volunteers/stats'),
+  updateStatus: (id, status) => api.patch(`/volunteers/${id}/status`, null, { params: { status } }),
 };
 
-// Evacuation Center APIs
 export const evacuationAPI = {
-  getAll:     ()       => api.get('/evacuation-centers/'),
-  getMapData: ()       => api.get('/evacuation-centers/map-data'),
-  create:     (data)   => api.post('/evacuation-centers/', data),
-  update:     (id, d)  => api.put(`/evacuation-centers/${id}`, d),
-  delete:     (id)     => api.delete(`/evacuation-centers/${id}`),
+  getAll:     ()         => api.get('/evacuation-centers/'),
+  getMapData: ()         => api.get('/evacuation-centers/map-data'),
+  create:     (data)     => api.post('/evacuation-centers/', data),
+  update:     (id, data) => api.put(`/evacuation-centers/${id}`, data),
+  delete:     (id)       => api.delete(`/evacuation-centers/${id}`),
 };
 
-// Resource APIs
 export const resourceAPI = {
-  getAll:   (type)    => api.get('/resources/', { params: type ? { type } : {} }),
-  create:   (data)    => api.post('/resources/', data),
-  update:   (id, d)   => api.put(`/resources/${id}`, d),
-  delete:   (id)      => api.delete(`/resources/${id}`),
+  getAll: ()         => api.get('/resources/'),
+  create: (data)     => api.post('/resources/', data),
+  update: (id, data) => api.put(`/resources/${id}`, data),
+  delete: (id)       => api.delete(`/resources/${id}`),
 };
 
-// Alert APIs
 export const alertAPI = {
-  getAll:      ()   => api.get('/alerts/'),
-  create:      (d)  => api.post('/alerts/', d),
-  deactivate:  (id) => api.patch(`/alerts/${id}/deactivate`),
+  getAll: () => api.get('/alerts/'),
 };
 
-// Notification APIs
 export const notificationAPI = {
-  getAll:       (params)  => api.get('/notifications/', { params }),
-  markRead:     (id)      => api.patch(`/notifications/${id}/read`),
-  markAllRead:  ()        => api.patch('/notifications/mark-all-read'),
-  delete:       (id)      => api.delete(`/notifications/${id}`),
+  getAll:      (params) => api.get('/notifications/', { params }),
+  markRead:    (id)     => api.patch(`/notifications/${id}/read`),
+  markAllRead: ()       => api.patch('/notifications/mark-all-read'),
+  delete:      (id)     => api.delete(`/notifications/${id}`),
 };
 
-// Report APIs
 export const reportAPI = {
-  generate:     (type, days, format = 'json') =>
-    api.get(`/reports/generate/${type}?days=${days || 30}&format=${format}`,
-      format === 'pdf' || format === 'csv'
-        ? { responseType: 'blob' }
-        : {}
-    ),
-  generatePdf:  (type, days) =>
-    api.get(`/reports/generate/${type}?days=${days || 30}&format=pdf`, { responseType: 'blob' }),
-  generateCsv:  (type, days) =>
-    api.get(`/reports/generate/${type}?days=${days || 30}&format=csv`, { responseType: 'blob' }),
-  getSummary:   () => api.get('/reports/summary'),
+  generate: (type, days, format = 'json') =>
+    api.get(`/reports/generate/${type}`, {
+      params: { days, format },
+      ...(format === 'json' ? {} : { responseType: 'blob' }),
+    }),
 };
 
-/** Helper: trigger a browser download from a blob response */
+/** Trigger a browser download from a blob response. */
 export function downloadBlob(response, fallbackFilename) {
   const disposition = response.headers['content-disposition'] || '';
   const match = disposition.match(/filename="?([^"]+)"?/);
-  const filename = match ? match[1] : fallbackFilename;
   const url = URL.createObjectURL(new Blob([response.data]));
   const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
+  a.href = url;
+  a.download = match ? match[1] : fallbackFilename;
+  a.click();
   URL.revokeObjectURL(url);
 }
 
-// User APIs
+export const auditAPI = {
+  getAll:     (params) => api.get('/audit/', { params }),
+  getActions: ()       => api.get('/audit/actions'),
+  getStats:   (days)   => api.get('/audit/stats', { params: { days } }),
+};
+
 export const userAPI = {
-  getProfile:  ()     => api.get('/users/profile'),
-  updateProfile:(d)   => api.put('/users/profile', d),
-  getAllUsers:  (p)    => api.get('/users/admin/all-users', { params: p }),
+  getProfile:    ()     => api.get('/users/profile'),
+  updateProfile: (data) => api.put('/users/profile', data),
 };
 
 export default api;
