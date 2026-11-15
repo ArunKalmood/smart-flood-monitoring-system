@@ -1,4 +1,4 @@
-# Smart Flood Monitoring and Early Warning System
+# Integrated Smart Flood Monitoring and Early Warning System Using Embedded Systems and LSTM
 
 An AI-enabled IoT-based flood monitoring and early warning platform that combines **ESP32 sensors, Machine Learning, Generative AI, and a React-Python web application** to monitor water levels, analyze rainfall and environmental conditions, predict flood risk, generate alerts, and support emergency response.
 
