@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Future integrations
     OPENAI_API_KEY: str = ""
     WATSON_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    FLOOD_IMPACT_DEFAULT_RADIUS_KM: float = 5.0
+    AI_CACHE_TTL_SECONDS: int = 120
     WEATHER_API_KEY: str = ""
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

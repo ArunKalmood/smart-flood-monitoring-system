@@ -1,0 +1,339 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>LSTM Integration — Exact Change Manifest</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.6;background:#fff;color:#1f2328}
+  .page{max-width:760px;margin:0 auto;padding:32px 24px}
+  h1{font-size:19px;font-weight:700;margin-bottom:4px}
+  .subtitle{font-size:12px;color:#57606a;margin-bottom:28px}
+  h2{font-size:14px;font-weight:700;margin:28px 0 10px;color:#1f2328;border-bottom:1px solid #e5e7eb;padding-bottom:5px;display:flex;align-items:center;gap:8px}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#3b82d4;color:#fff;font-size:11px;font-weight:700;flex-shrink:0}
+  h3{font-size:13px;font-weight:700;margin:14px 0 5px;color:#3b82d4}
+  p{margin-bottom:7px;font-size:13px}
+  code{font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;background:#f7f8fa;border:1px solid #e5e7eb;border-radius:3px;padding:1px 5px}
+  .block{background:#f7f8fa;border:1px solid #e5e7eb;border-radius:6px;padding:12px 14px;margin:8px 0;font-size:13px}
+  .block ul{padding-left:16px}
+  .block li{margin-bottom:4px}
+  .diff{background:#f6fff8;border:1px solid #bbf7d0;border-radius:6px;padding:10px 14px;margin:8px 0;font-size:12px;font-family:"SFMono-Regular",Consolas,monospace;white-space:pre-wrap;line-height:1.5}
+  .diff-del{color:#9a3412;text-decoration:line-through;background:#fee2e2;border-radius:2px;padding:0 2px}
+  .diff-add{color:#166534;background:#dcfce7;border-radius:2px;padding:0 2px}
+  .diff-ctx{color:#57606a}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;vertical-align:middle}
+  .new{background:#dcfce7;color:#166534}
+  .mod{background:#fef9c3;color:#854d0e}
+  .safe{background:#f1f5f9;color:#475569}
+  .warn-box{background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:10px 14px;margin:10px 0;font-size:13px;color:#9a3412}
+  .safe-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 14px;margin:10px 0;font-size:13px;color:#166534}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+  th{background:#f7f8fa;text-align:left;padding:6px 10px;border-bottom:1px solid #e5e7eb;font-weight:600}
+  td{padding:6px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .path{font-family:"SFMono-Regular",Consolas,monospace;font-size:12px}
+  footer{margin-top:40px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:11px;color:#57606a;text-align:center}
+  hr{border:none;border-top:1px solid #e5e7eb;margin:20px 0}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>LSTM Integration — Exact Change Manifest</h1>
+<p class="subtitle">Every file listed. Every change described precisely. Nothing will be written until you approve.</p>
+
+<div class="safe-box">
+  <strong>Preservation guarantee:</strong> serial_bridge.py · useWebSerial.js · SerialContext.js · ArduinoLivePanel.js · SerialLiveCards · all existing routes except the one-line hook in sensors.py · all existing ML models · existing DB schema · existing navigation entries — untouched.
+</div>
+
+
+<h2><span class="num">1</span> Prerequisite — place your CSV files</h2>
+<p><strong>Action required by you before training (Phase 1):</strong></p>
+<div class="block">
+  Copy your two CSV files into <code>backend/ml/data/dam/</code>:<br />
+    • <code>dam_simulated_dataset.csv</code><br />
+    • <code>dam_lstm_dataset.csv</code><br /><br />
+  Both must contain columns: <code>timestamp</code>, <code>water_level_cm</code>, <code>rain_detected</code>, <code>water_level_next_15min</code>, <code>water_level_next_30min</code>.
+</div>
+
+
+<h2><span class="num">2</span> New backend files — Phase 1 &amp; 2 (ML layer)</h2>
+
+<h3>2a. <span class="pill new">NEW</span> <code>backend/ml/data/dam/.gitkeep</code></h3>
+<p>Empty sentinel so the directory is tracked by git before you drop your CSVs in.</p>
+
+<h3>2b. <span class="pill new">NEW</span> <code>backend/ml/dam/__init__.py</code></h3>
+<p>Empty module marker.</p>
+
+<h3>2c. <span class="pill new">NEW</span> <code>backend/ml/dam/train_dam_lstm.py</code></h3>
+<div class="block">
+  <strong>Purpose:</strong> standalone training script you run once.<br /><br />
+  <strong>Exact behaviour:</strong>
+  <ul>
+    <li>Reads both CSVs from <code>backend/ml/data/dam/</code>; prioritises <code>dam_lstm_dataset.csv</code> (the pre-prepared one); uses <code>dam_simulated_dataset.csv</code> as supplementary if needed.</li>
+    <li>Parses <code>timestamp</code> column; sorts chronologically; validates <code>water_level_cm</code> and <code>rain_detected</code> are present and numeric.</li>
+    <li>Applies a 70/15/15 chronological split (no random shuffle — time-ordered).</li>
+    <li>Builds sliding windows of exactly <strong>60 steps × 2 features</strong> (<code>water_level_cm</code>, <code>rain_detected</code>), one-minute sampling interval assumed.</li>
+    <li>Regression targets per window: <code>water_level_next_15min</code> (step+15), <code>water_level_next_30min</code> (step+30).</li>
+    <li>Fits a <code>MinMaxScaler</code> on the two input features using training windows only; never touches val/test data before transform.</li>
+    <li>LSTM architecture: Input(60,2) → LSTM(64, return_sequences=True) → Dropout(0.2) → LSTM(32) → Dropout(0.2) → Dense(16, relu) → Dense(2, linear). Compiled with Adam, loss=MSE.</li>
+    <li>Trains up to 100 epochs; EarlyStopping(patience=10, restore_best_weights=True) on val_loss.</li>
+    <li>Computes MAE and RMSE on test set for both outputs (+15 min, +30 min).</li>
+    <li>Computes persistence baseline (last known value = prediction) MAE/RMSE for comparison.</li>
+    <li>Saves artifacts to <code>backend/ml/models/dam/</code>:
+      <ul>
+        <li><code>dam_lstm_simulated_v1.keras</code> — the trained model</li>
+        <li><code>dam_scaler.pkl</code> — the fitted MinMaxScaler</li>
+        <li><code>dam_model_meta.json</code> — window_len=60, features, thresholds, training_source="SIMULATED", split sizes, MAE/RMSE, baseline MAE/RMSE, timestamp</li>
+      </ul>
+    </li>
+    <li>Does <strong>not</strong> overwrite any file under <code>backend/ml/models/</code> (Stage 3 models).</li>
+    <li>Prints a clear notice: <em>"WARNING: This model is trained on simulated data. Do not claim real-world accuracy."</em></li>
+  </ul>
+</div>
+
+<h3>2d. <span class="pill new">NEW</span> <code>backend/ml/dam/live_buffer.py</code></h3>
+<div class="block">
+  <strong>Purpose:</strong> thread-safe, in-memory rolling window that feeds the predictor.<br /><br />
+  <strong>Exact behaviour:</strong>
+  <ul>
+    <li>Class <code>DamLiveBuffer</code> with a <code>threading.Lock</code> around all mutations.</li>
+    <li>Holds a <code>deque(maxlen=60)</code> of one-minute aggregated buckets: <code>{"minute": datetime, "water_level_cm": float, "rain_detected": float}</code>.</li>
+    <li><code>push(water_level_m: float, rainfall: float, recorded_at: datetime)</code> — called from the sensor ingest hook. Converts water_level_m → cm (<code>×100</code>). Maps rainfall (0.0/1.0) directly. Aggregates into the current minute bucket (mean water_level_cm, max rain_detected). Creates a new bucket when the minute changes.</li>
+    <li><code>bootstrap(db: Session)</code> — called once at app startup. Queries the last 60 minutes of <code>FloodData</code> rows, aggregates by minute, pre-fills the deque. If fewer than 60 minutes exist, fills with what is available; <code>get_window()</code> will indicate insufficient data until the buffer is full.</li>
+    <li><code>get_window()</code> — returns <code>(numpy_array_60x2, is_ready: bool, minutes_available: int)</code>. <code>is_ready</code> is True only when the deque has exactly 60 valid buckets. The array columns are <code>[water_level_cm, rain_detected]</code> in time order (oldest first).</li>
+    <li>Module-level singleton: <code>dam_buffer = DamLiveBuffer()</code> imported by both the route and the sensor hook.</li>
+    <li>No I/O other than the one startup DB query; never reads from or writes to any file.</li>
+  </ul>
+</div>
+
+<h3>2e. <span class="pill new">NEW</span> <code>backend/ml/dam/predictor.py</code></h3>
+<div class="block">
+  <strong>Purpose:</strong> loads model artifacts once; runs inference on demand.<br /><br />
+  <strong>Exact behaviour:</strong>
+  <ul>
+    <li>Lazy-loads <code>dam_lstm_simulated_v1.keras</code> and <code>dam_scaler.pkl</code> at first call; caches them in module-level variables.</li>
+    <li>If model files do not exist, returns a structured "not_trained" error response — never raises an exception that would crash the API.</li>
+    <li><code>get_dam_prediction()</code>:
+      <ol>
+        <li>Calls <code>dam_buffer.get_window()</code>.</li>
+        <li>If not ready → returns <code>{"available": false, "reason": "Collecting sensor history ({n}/60 minutes)"}</code>.</li>
+        <li>Scales the 60×2 window with the loaded scaler (transform only, never fit).</li>
+        <li>Reshapes to (1, 60, 2); runs <code>model.predict()</code>.</li>
+        <li>Inverse-transforms the two output values back to cm.</li>
+        <li>Computes trend: compares predicted +15 min value against current (last bucket) water_level_cm. Rising / Falling / Stable (±0.5 cm threshold).</li>
+        <li>Applies dam thresholds to the predicted values: Normal ≤5.0 cm, Warning &gt;5.0–7.5 cm, Critical &gt;7.5 cm.</li>
+        <li>Returns:
+          <code>{"available": true, "current_water_level_cm": float, "predicted_15min_cm": float, "predicted_30min_cm": float, "trend": "rising|falling|stable", "forecast_risk": "normal|warning|critical", "prediction_timestamp": ISO-string, "training_source": "SIMULATED", "minutes_in_buffer": int, "thresholds": {"normal_max_cm": 5.0, "warning_max_cm": 7.5}}</code>
+        </li>
+      </ol>
+    </li>
+  </ul>
+</div>
+
+
+<h2><span class="num">3</span> New backend files — Phase 3 (API route)</h2>
+
+<h3>3a. <span class="pill new">NEW</span> <code>backend/routes/lstm.py</code></h3>
+<div class="block">
+  <ul>
+    <li>Single route: <code>GET /api/lstm/predict</code>. Requires <code>require_auth</code> (same as all other authenticated routes).</li>
+    <li>No DB session dependency — prediction is pure in-memory.</li>
+    <li>Calls <code>get_dam_prediction()</code>; returns its dict as JSON.</li>
+    <li>No POST, no DB writes, no side effects.</li>
+  </ul>
+</div>
+
+
+<h2><span class="num">4</span> Modified backend files — Phase 3</h2>
+
+<h3>4a. <span class="pill mod">MODIFY</span> <code>backend/routes/sensors.py</code></h3>
+<p>Exact change: <strong>two lines added</strong> at the top of <code>ingest_sensor_data()</code>, immediately after <code>db.flush()</code> and before <code>prediction = record_live_prediction(...)</code>. No existing lines are removed or reordered.</p>
+<div class="diff">
+<span class="diff-ctx">    db.add(FloodData(...))
+    db.flush()
+</span><span class="diff-add">    # Feed the LSTM dam buffer — non-blocking, never raises
+    from ml.dam.live_buffer import dam_buffer
+    dam_buffer.push(data.water_level, data.rainfall or 0.0, utc_now())
+</span><span class="diff-ctx">    prediction = record_live_prediction(db, sensor_id=sensor.id)
+    db.commit()</span></div>
+<p>The import is local (inside the function) so it only loads if the module exists, and any import error is caught silently — the existing ingest path is unaffected.</p>
+<p>The actual line will be wrapped in a <code>try/except Exception</code> so a buffer error can never surface to the caller or break sensor data recording.</p>
+
+<h3>4b. <span class="pill mod">MODIFY</span> <code>backend/main.py</code></h3>
+<p>Exact change: <strong>two lines added</strong> in the router registration block.</p>
+<div class="diff">
+<span class="diff-ctx">from routes.audit import router as audit_router
+from routes.public import router as public_router
+</span><span class="diff-add">from routes.lstm import router as lstm_router
+</span><span class="diff-ctx">...
+app.include_router(public_router, prefix=API_PREFIX)
+</span><span class="diff-add">app.include_router(lstm_router, prefix=API_PREFIX)</span></div>
+
+<h3>4c. <span class="pill mod">MODIFY</span> <code>backend/main.py</code> lifespan</h3>
+<p>The <code>lifespan</code> async context manager receives one additional call to bootstrap the buffer from the DB at startup.</p>
+<div class="diff">
+<span class="diff-ctx">@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_tables()
+    print("[OK] FloodMonitor API started. Tables created.")
+</span><span class="diff-add">    # Bootstrap the LSTM dam live buffer from the last 60 min of FloodData
+    try:
+        from database.connection import SessionLocal
+        from ml.dam.live_buffer import dam_buffer
+        with SessionLocal() as db:
+            dam_buffer.bootstrap(db)
+        print("[OK] Dam LSTM live buffer bootstrapped.")
+    except Exception as exc:
+        print(f"[WARN] Dam buffer bootstrap skipped: {exc}")
+</span><span class="diff-ctx">    yield</span></div>
+
+
+<h2><span class="num">5</span> New frontend files — Phase 4</h2>
+
+<h3>5a. <span class="pill new">NEW</span> <code>frontend/src/pages/dashboard/LSTMPrediction.js</code></h3>
+<div class="block">
+  <strong>Renders a fully self-contained page. No connection to SerialContext. No effect on existing pages.</strong>
+  <ul>
+    <li>Calls <code>lstmAPI.getPrediction()</code> every 60 seconds via <code>usePolling</code>. No manual polling loop; reuses the existing <code>usePolling</code> hook.</li>
+    <li>Displays two clearly separated sections:
+      <ol>
+        <li><strong>Current Sensor Reading</strong> — shows <code>current_water_level_cm</code> from the prediction response (this is the last real ESP32 reading, not a prediction). Label clearly says "Current measured level".</li>
+        <li><strong>LSTM Forecast</strong> — shows predicted +15 min, +30 min, trend icon (↑/↓/→), forecast risk badge (Normal/Warning/Critical using dam thresholds), prediction timestamp.</li>
+      </ol>
+    </li>
+    <li>Persistent top banner in amber: <em>"Model trained on SIMULATED data only. Predictions are experimental and do not reflect real-world accuracy."</em></li>
+    <li>When <code>available === false</code>: shows a neutral card with the reason string (e.g. "Collecting sensor history (12/60 minutes)") — no fake values.</li>
+    <li>When model files not present: shows "LSTM model not trained yet. Run backend/ml/dam/train_dam_lstm.py first."</li>
+    <li>All text strings come from <code>t()</code> translation keys (see Section 6b).</li>
+    <li>Uses only Lucide icons already present in the project (<code>TrendingUp</code>, <code>TrendingDown</code>, <code>Minus</code>, <code>AlertTriangle</code>, <code>Brain</code>, <code>Clock</code>, <code>Droplets</code>).</li>
+    <li>Styled with the same Tailwind utility classes as <code>ArduinoLivePanel.js</code> for visual consistency. No new CSS files.</li>
+  </ul>
+</div>
+
+
+<h2><span class="num">6</span> Modified frontend files — Phase 4</h2>
+
+<h3>6a. <span class="pill mod">MODIFY</span> <code>frontend/src/services/api/index.js</code></h3>
+<p>Exact change: <strong>one export added</strong> at the end of the file, after all existing exports.</p>
+<div class="diff">
+<span class="diff-ctx">export const predictionAPI = { ... };
+...
+// (existing exports unchanged)
+</span><span class="diff-add">export const lstmAPI = {
+  getPrediction: () =&gt; api.get('/lstm/predict'),
+};</span></div>
+
+<h3>6b. <span class="pill mod">MODIFY</span> <code>frontend/src/i18n/en.js</code></h3>
+<p>Exact change: <strong>19 new keys appended</strong> inside the <code>en</code> object, before the closing <code>};</code>. No existing keys touched.</p>
+<div class="diff">
+<span class="diff-add">  // ── LSTM Prediction page ────────────────────────────────
+  nav_lstm_prediction: 'LSTM Forecast',
+  lstm_page_title: 'LSTM Water Level Forecast',
+  lstm_simulated_banner: 'Model trained on SIMULATED data only. Predictions are experimental — do not use for real-world safety decisions.',
+  lstm_current_level: 'Current Measured Level',
+  lstm_pred_15min: 'Predicted in 15 min',
+  lstm_pred_30min: 'Predicted in 30 min',
+  lstm_trend: 'Trend',
+  lstm_forecast_risk: 'Forecast Risk',
+  lstm_pred_timestamp: 'Prediction generated',
+  lstm_training_source: 'Training Data',
+  lstm_collecting: 'Collecting sensor history ({n}/60 minutes)',
+  lstm_not_trained: 'LSTM model not trained yet. Run backend/ml/dam/train_dam_lstm.py first.',
+  lstm_trend_rising: 'Rising',
+  lstm_trend_falling: 'Falling',
+  lstm_trend_stable: 'Stable',
+  lstm_risk_normal: 'Normal',
+  lstm_risk_warning: 'Warning',
+  lstm_risk_critical: 'Critical',
+  lstm_minutes_in_buffer: '{n}/60 minutes of history',</span></div>
+
+<h3>6c. <span class="pill mod">MODIFY</span> <code>frontend/src/i18n/hi.js</code> <em>(and all 9 other language files)</em></h3>
+<p>The <strong>same 19 keys</strong> are added to every language file. For non-English languages the values are English transliterations / equivalents — clearly correct translations will be provided in-line. The translation test suite checks for key parity across all languages, so all 10 must have identical key sets.</p>
+<p>Files modified: <code>hi.js</code>, <code>kn.js</code>, <code>mr.js</code>, <code>ta.js</code>, <code>te.js</code>, <code>ml.js</code>, <code>bn.js</code>, <code>ur.js</code>, <code>ne.js</code> (9 files, same 19 keys each).</p>
+
+<h3>6d. <span class="pill mod">MODIFY</span> <code>frontend/src/config/navigation.js</code></h3>
+<p>Exact change: <strong>one entry appended</strong> to the <code>DASHBOARD_PAGES</code> array, after the <code>ai-intelligence</code> entry. All existing entries are untouched.</p>
+<div class="diff">
+<span class="diff-ctx">  { path: '/dashboard/ai-intelligence', labelKey: 'nav_ai_intelligence', icon: Sparkles, permission: null },
+</span><span class="diff-add">  { path: '/dashboard/lstm-prediction',  labelKey: 'nav_lstm_prediction',  icon: TrendingUp, permission: null },
+</span><span class="diff-ctx">  { path: '/dashboard/sos', ... },</span></div>
+<p><code>TrendingUp</code> is already imported in the file via lucide-react.</p>
+
+<h3>6e. <span class="pill mod">MODIFY</span> <code>frontend/src/App.js</code></h3>
+<p>Exact change: <strong>one lazy import and one PAGE_COMPONENTS entry added</strong>.</p>
+<div class="diff">
+<span class="diff-ctx">const AIFloodIntelligence = lazy(() =&gt; import('./pages/dashboard/AIFloodIntelligence'));
+</span><span class="diff-add">const LSTMPrediction      = lazy(() =&gt; import('./pages/dashboard/LSTMPrediction'));
+</span><span class="diff-ctx">...
+  '/dashboard/ai-intelligence': AIFloodIntelligence,
+</span><span class="diff-add">  '/dashboard/lstm-prediction':  LSTMPrediction,
+</span></div>
+
+
+<h2><span class="num">7</span> Phase 5 — Real data collection utility</h2>
+<h3>7a. <span class="pill new">NEW</span> <code>backend/scripts/export_real_sensor_history.py</code></h3>
+<div class="block">
+  <ul>
+    <li>CLI script: <code>python scripts/export_real_sensor_history.py --hours 72 --out ml/data/dam/real_runs/real_history.csv</code></li>
+    <li>Queries <code>FloodData</code> for the requested window; outputs <code>timestamp, water_level_cm, rain_detected</code>.</li>
+    <li>Writes to <code>backend/ml/data/dam/real_runs/</code> (separate from simulated data).</li>
+    <li>Adds a header comment: <em># source: REAL_ESP32 — do not mix with simulated training data</em></li>
+    <li>No automatic mixing; no retraining trigger. Manual step only.</li>
+  </ul>
+</div>
+
+
+<h2><span class="num">8</span> Complete file count</h2>
+<table>
+  <thead>
+    <tr><th>#</th><th>File</th><th>Action</th><th>Lines changed</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td class="path">backend/ml/data/dam/.gitkeep</td><td><span class="pill new">NEW</span></td><td>1</td></tr>
+    <tr><td>2</td><td class="path">backend/ml/dam/__init__.py</td><td><span class="pill new">NEW</span></td><td>1</td></tr>
+    <tr><td>3</td><td class="path">backend/ml/dam/train_dam_lstm.py</td><td><span class="pill new">NEW</span></td><td>~230</td></tr>
+    <tr><td>4</td><td class="path">backend/ml/dam/live_buffer.py</td><td><span class="pill new">NEW</span></td><td>~110</td></tr>
+    <tr><td>5</td><td class="path">backend/ml/dam/predictor.py</td><td><span class="pill new">NEW</span></td><td>~100</td></tr>
+    <tr><td>6</td><td class="path">backend/models/dam/</td><td><span class="pill new">NEW dir</span></td><td>.gitkeep only</td></tr>
+    <tr><td>7</td><td class="path">backend/routes/lstm.py</td><td><span class="pill new">NEW</span></td><td>~25</td></tr>
+    <tr><td>8</td><td class="path">backend/routes/sensors.py</td><td><span class="pill mod">MODIFY</span></td><td>+5 lines (try/except push)</td></tr>
+    <tr><td>9</td><td class="path">backend/main.py</td><td><span class="pill mod">MODIFY</span></td><td>+10 lines (import + include_router + lifespan bootstrap)</td></tr>
+    <tr><td>10</td><td class="path">backend/scripts/export_real_sensor_history.py</td><td><span class="pill new">NEW</span></td><td>~60</td></tr>
+    <tr><td>11</td><td class="path">frontend/src/services/api/index.js</td><td><span class="pill mod">MODIFY</span></td><td>+3 lines</td></tr>
+    <tr><td>12</td><td class="path">frontend/src/pages/dashboard/LSTMPrediction.js</td><td><span class="pill new">NEW</span></td><td>~230</td></tr>
+    <tr><td>13</td><td class="path">frontend/src/config/navigation.js</td><td><span class="pill mod">MODIFY</span></td><td>+1 line</td></tr>
+    <tr><td>14</td><td class="path">frontend/src/App.js</td><td><span class="pill mod">MODIFY</span></td><td>+2 lines</td></tr>
+    <tr><td>15</td><td class="path">frontend/src/i18n/en.js</td><td><span class="pill mod">MODIFY</span></td><td>+19 keys</td></tr>
+    <tr><td>16–24</td><td class="path">frontend/src/i18n/{hi,kn,mr,ta,te,ml,bn,ur,ne}.js</td><td><span class="pill mod">MODIFY</span></td><td>+19 keys each (×9 files)</td></tr>
+  </tbody>
+</table>
+
+
+<h2><span class="num">9</span> Files that will NOT be changed</h2>
+<table>
+  <thead><tr><th>File</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td class="path">backend/serial_bridge.py</td><td>Untouched — buffer receives data via API POST, not via bridge</td></tr>
+    <tr><td class="path">frontend/src/hooks/useWebSerial.js</td><td>Untouched — zero-await serial loop not modified</td></tr>
+    <tr><td class="path">frontend/src/context/SerialContext.js</td><td>Untouched</td></tr>
+    <tr><td class="path">frontend/src/components/dashboard/ArduinoLivePanel.js</td><td>Untouched — existing sensor cards unchanged</td></tr>
+    <tr><td class="path">frontend/src/pages/dashboard/Dashboard.js</td><td>Untouched — SerialLiveCards and chart body unchanged</td></tr>
+    <tr><td class="path">backend/ml/models/lstm-stage3-*.keras</td><td>Untouched — Stage 3 / v2 models preserved</td></tr>
+    <tr><td class="path">backend/ml/models/scaler_*.pkl</td><td>Untouched</td></tr>
+    <tr><td class="path">backend/ml/stage3_data*.py · train_lstm_stage3*.py · infer_stage3*.py</td><td>Untouched</td></tr>
+    <tr><td class="path">backend/models/*.py (all DB models)</td><td>No new DB tables — buffer is in-memory only</td></tr>
+    <tr><td class="path">backend/database/migrations.py</td><td>Untouched — no schema changes</td></tr>
+    <tr><td class="path">backend/routes/predictions.py · ai.py · genai.py · evacuation.py</td><td>Untouched</td></tr>
+    <tr><td class="path">backend/services/prediction.py · readings.py</td><td>Untouched — rule-based prediction pipeline unchanged</td></tr>
+  </tbody>
+</table>
+
+<div class="warn-box">
+  <strong>Waiting for your approval.</strong> Reply "approved" (or with any amendments) and implementation will begin phase by phase, with validation at each step.
+</div>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

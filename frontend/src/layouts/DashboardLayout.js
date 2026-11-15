@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, Link } from 'react-router-dom';
+import { SerialProvider } from '../context/SerialContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LogOut, Menu, ChevronLeft, Sun, Moon, Waves, Shield, ChevronRight,
@@ -207,6 +208,7 @@ export default function DashboardLayout() {
   const userName = user?.full_name || user?.name || '';
 
   return (
+    <SerialProvider>
     <div className="flex h-screen bg-slate-50 dark:bg-[#07111F] text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
       {/* Desktop Navigation Rail */}
       <motion.aside
@@ -547,5 +549,6 @@ export default function DashboardLayout() {
         </main>
       </div>
     </div>
+    </SerialProvider>
   );
 }

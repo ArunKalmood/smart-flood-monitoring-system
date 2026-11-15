@@ -66,6 +66,64 @@ def serialize_sensor(sensor: Sensor, db: Optional[Session] = None) -> dict:
     return data
 
 
+@router.get("/live")
+async def get_live_reading(sensor_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Latest reading from the most-recently-active sensor (or a specific sensor_id).
+    No authentication required — safe for the public dashboard panel.
+    Returns null fields when no data has been received yet.
+    """
+    query = db.query(FloodData)
+    if sensor_id:
+        sensor = db.query(Sensor).filter(Sensor.sensor_id == sensor_id).first()
+        if sensor:
+            query = query.filter(FloodData.sensor_id == sensor.id)
+    row = query.order_by(desc(FloodData.recorded_at)).first()
+
+    if row is None:
+        return {
+            "sensor_id": sensor_id,
+            "water_level": None,
+            "rainfall": None,
+            "temperature": None,
+            "humidity": None,
+            "river_flow": None,
+            "latitude": None,
+            "longitude": None,
+            "recorded_at": None,
+            "risk_level": None,
+            "online": False,
+        }
+
+    # Resolve the sensor that owns this reading
+    owner = db.query(Sensor).filter(Sensor.id == row.sensor_id).first()
+    # Determine online status: online if reading arrived within SENSOR_OFFLINE_AFTER_MINUTES
+    is_online = False
+    if row.recorded_at:
+        age = utc_now() - as_utc(row.recorded_at)
+        is_online = age <= timedelta(minutes=settings.SENSOR_OFFLINE_AFTER_MINUTES)
+
+    # Latest prediction for this sensor
+    pred = (db.query(Prediction)
+            .filter(Prediction.sensor_id == row.sensor_id)
+            .order_by(desc(Prediction.predicted_at)).first())
+
+    return {
+        "sensor_id": owner.sensor_id if owner else None,
+        "sensor_name": owner.name if owner else None,
+        "water_level": row.water_level,
+        "rainfall": row.rainfall,
+        "temperature": row.temperature,
+        "humidity": row.humidity,
+        "river_flow": row.river_flow,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
+        "recorded_at": iso(row.recorded_at),
+        "risk_level": pred.risk_level if pred else None,
+        "online": is_online,
+    }
+
+
 @router.get("/")
 async def get_all_sensors(current_user=Depends(require_auth), db: Session = Depends(get_db)):
     sensors = db.query(Sensor).filter(Sensor.is_active.is_(True)).order_by(Sensor.id).all()
@@ -109,6 +167,33 @@ async def ingest_sensor_data(
 
     db.add(FloodData(sensor_id=sensor.id, latitude=data.latitude, longitude=data.longitude, **readings))
     db.flush()
+
+    # ── Dam LSTM live buffer hook ──────────────────────────────────────────────
+    # Push the raw reading into the rolling window for LSTM inference.
+    # This is intentionally placed AFTER db.flush() so the FloodData row exists
+    # before the buffer is updated.  Any buffer error must never affect the
+    # existing sensor ingestion path — hence the broad try/except with logging.
+    # NOTE: water_level is in METRES (as stored in FloodData). The buffer
+    # converts to centimetres internally (× 100). The 10.5 cm depth calibration
+    # is NOT applied here — it will be added in a later step once the hardware
+    # has been mounted and the reference height confirmed.
+    try:
+        from ml.dam.live_buffer import dam_buffer
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        dam_buffer.push(data.water_level, data.rainfall, utc_now())
+        _log.debug(
+            "DamBuffer push: wl=%.4f m  rain=%.1f  sensor=%s",
+            data.water_level or 0.0,
+            data.rainfall or 0.0,
+            sensor.sensor_id,
+        )
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "DamBuffer push failed (sensor data already saved): %s", _exc, exc_info=True
+        )
+
     prediction = record_live_prediction(db, sensor_id=sensor.id)
     db.commit()
 

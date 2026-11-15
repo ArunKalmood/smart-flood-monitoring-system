@@ -26,7 +26,10 @@ def test_builds_every_pdf_the_frontend_links_to(tmp_path):
 
 
 def test_emergency_numbers_match_the_site():
-    with open(os.path.join(FRONTEND_SRC, "constants", "publicInfo.js"), encoding="utf-8") as f:
+    path = os.path.join(FRONTEND_SRC, "config", "emergencyContacts.js")
+    if not os.path.exists(path):
+        path = os.path.join(FRONTEND_SRC, "constants", "publicInfo.js")
+    with open(path, encoding="utf-8") as f:
         site_numbers = re.findall(r"number: '([\d-]+)'", f.read())
     assert site_numbers == [n for _, _, n in build_public_resources.EMERGENCY_NUMBERS]
 

@@ -1,0 +1,69 @@
+{
+  "model_name": "dam_lstm_simulated_v1.keras",
+  "training_source": "SIMULATED",
+  "disclaimer": "This model is trained on SIMULATED data only. Do NOT use for real-world safety decisions. Predictions must be labelled EXPERIMENTAL.",
+  "created_at": "2026-11-15T12:27:51.225895Z",
+  "csv_used": "dam_lstm_dataset.csv",
+  "window_len": 60,
+  "n_features": 2,
+  "feature_names": [
+    "water_level_cm",
+    "rain_detected"
+  ],
+  "target_names": [
+    "water_level_next_15min",
+    "water_level_next_30min"
+  ],
+  "n_outputs": 2,
+  "sampling_minutes": 1,
+  "split": {
+    "train_rows": 10059,
+    "val_rows": 2155,
+    "test_rows": 2156,
+    "train_windows": 9999,
+    "val_windows": 2095,
+    "test_windows": 2096
+  },
+  "epochs_trained": 93,
+  "thresholds_cm": {
+    "normal_max": 5.0,
+    "warning_max": 7.5,
+    "critical_above": 7.5
+  },
+  "trend_stable_threshold_cm": 0.5,
+  "db_water_level_unit": "metres",
+  "buffer_unit": "centimetres",
+  "unit_conversion_note": "DB stores water_level in metres. live_buffer.push() multiplies by 100 to convert to centimetres before storing in the rolling window.",
+  "test_metrics_lstm": {
+    "mae_overall": 0.2509,
+    "rmse_overall": 0.3714,
+    "mae_15min_cm": 0.1676,
+    "mae_30min_cm": 0.3342,
+    "rmse_15min_cm": 0.2402,
+    "rmse_30min_cm": 0.4671
+  },
+  "test_metrics_baseline": {
+    "mae_overall": 0.4477,
+    "rmse_overall": 0.6026,
+    "mae_15min_cm": 0.3074,
+    "mae_30min_cm": 0.5879,
+    "rmse_15min_cm": 0.4009,
+    "rmse_30min_cm": 0.7521
+  },
+  "scaler": {
+    "type": "MinMaxScaler",
+    "feature_range": [
+      0,
+      1
+    ],
+    "fit_on": "training windows only",
+    "data_min": [
+      0.5699999928474426,
+      0.0
+    ],
+    "data_max": [
+      9.779999732971191,
+      1.0
+    ]
+  }
+}

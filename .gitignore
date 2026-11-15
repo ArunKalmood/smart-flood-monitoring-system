@@ -1,16 +1,29 @@
-# Dependencies / builds
-node_modules/
-frontend/build/
+# Python virtual environments
+backend/venv_win/
 backend/venv/
+venv/
+.venv/
+
+# Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
-.pytest_cache/
 
-# Secrets and local data
+# Node dependencies
+node_modules/
+
+# Environment secrets
 .env
+.env.*
 !.env.example
-*.db
-backend/uploads/
-
-# Logs
+# Local logs
 *.log
+
+# Local database
+backend/floodmonitor.db
+
+# Frontend production build
+frontend/build/
+
+# IBM Bob local configuration
+.bob/

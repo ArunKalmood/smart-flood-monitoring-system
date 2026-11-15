@@ -25,6 +25,8 @@ const ForgotPassword   = lazy(() => import('./pages/auth/ForgotPassword'));
 const Dashboard        = lazy(() => import('./pages/dashboard/Dashboard'));
 const SensorMonitor    = lazy(() => import('./pages/dashboard/SensorMonitor'));
 const FloodPrediction  = lazy(() => import('./pages/dashboard/FloodPrediction'));
+const AIFloodIntelligence = lazy(() => import('./pages/dashboard/AIFloodIntelligence'));
+const LSTMPrediction      = lazy(() => import('./pages/dashboard/LSTMPrediction'));
 const SOSDashboard     = lazy(() => import('./pages/dashboard/SOSDashboard'));
 const ResourceTracker  = lazy(() => import('./pages/dashboard/ResourceTracker'));
 const RouteMap         = lazy(() => import('./pages/dashboard/RouteMap'));
@@ -47,6 +49,8 @@ const PAGE_COMPONENTS = {
   '/dashboard':               Dashboard,
   '/dashboard/sensors':       SensorMonitor,
   '/dashboard/predictions':   FloodPrediction,
+  '/dashboard/ai-intelligence': AIFloodIntelligence,
+  '/dashboard/lstm-prediction': LSTMPrediction,
   '/dashboard/sos':           SOSDashboard,
   '/dashboard/resources':     ResourceTracker,
   '/dashboard/routes':        RouteMap,

@@ -12,16 +12,24 @@ import mr from './mr';
 import te from './te';
 import ta from './ta';
 import kn from './kn';
+import ml from './ml';
+import bn from './bn';
+import ur from './ur';
+import ne from './ne';
 
-export const TRANSLATIONS = { en, hi, mr, te, ta, kn };
+export const TRANSLATIONS = { en, kn, hi, ml, ta, te, mr, bn, ur, ne };
 
 export const LANGUAGES = [
-  { code: 'en', label: 'English', nativeLabel: 'English', locale: 'en-IN' },
-  { code: 'hi', label: 'Hindi',   nativeLabel: 'हिंदी',     locale: 'hi-IN' },
-  { code: 'mr', label: 'Marathi', nativeLabel: 'मराठी',     locale: 'mr-IN' },
-  { code: 'te', label: 'Telugu',  nativeLabel: 'తెలుగు',    locale: 'te-IN' },
-  { code: 'ta', label: 'Tamil',   nativeLabel: 'தமிழ்',     locale: 'ta-IN' },
-  { code: 'kn', label: 'Kannada', nativeLabel: 'ಕನ್ನಡ',     locale: 'kn-IN' },
+  { code: 'en', label: 'English',   nativeLabel: 'English',   locale: 'en-IN' },
+  { code: 'kn', label: 'Kannada',   nativeLabel: 'ಕನ್ನಡ',     locale: 'kn-IN' },
+  { code: 'hi', label: 'Hindi',     nativeLabel: 'हिंदी',       locale: 'hi-IN' },
+  { code: 'ml', label: 'Malayalam', nativeLabel: 'മലയാളം',   locale: 'ml-IN' },
+  { code: 'ta', label: 'Tamil',     nativeLabel: 'தமிழ்',       locale: 'ta-IN' },
+  { code: 'te', label: 'Telugu',    nativeLabel: 'తెలుగు',      locale: 'te-IN' },
+  { code: 'mr', label: 'Marathi',   nativeLabel: 'मराठी',       locale: 'mr-IN' },
+  { code: 'bn', label: 'Bengali',   nativeLabel: 'বাংলা',       locale: 'bn-IN' },
+  { code: 'ur', label: 'Urdu',      nativeLabel: 'اردو',        locale: 'ur-IN' },
+  { code: 'ne', label: 'Nepali',    nativeLabel: 'नेपाली',      locale: 'ne-NP' },
 ];
 
 const STORAGE_KEY = 'app_language';

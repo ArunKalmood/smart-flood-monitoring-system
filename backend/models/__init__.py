@@ -10,10 +10,11 @@ from models.notification import Notification
 from models.evacuation_center import EvacuationCenter, Resource, Alert, Report
 from models.audit_log import AuditLog
 from models.admin_invite import AdminInvite
+from models.ai_analysis import AIAnalysisHistory
 
 __all__ = [
     "User", "Admin", "Volunteer", "Sensor",
     "FloodData", "Prediction", "SOS", "Feedback",
     "Notification", "EvacuationCenter", "Resource", "Alert", "Report",
-    "AuditLog", "AdminInvite",
+    "AuditLog", "AdminInvite", "AIAnalysisHistory",
 ]

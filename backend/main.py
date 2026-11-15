@@ -15,6 +15,7 @@ from database.connection import create_tables
 from routes.auth import router as auth_router
 from routes.sensors import router as sensor_router
 from routes.predictions import router as prediction_router
+from routes.lstm import router as lstm_router
 from routes.sos import router as sos_router
 from routes.feedback import router as feedback_router
 from routes.volunteers import router as volunteer_router
@@ -23,6 +24,8 @@ from routes.dashboard import router as dashboard_router
 from routes.users import router as user_router
 from routes.reports import router as report_router
 from routes.genai import router as genai_router
+from routes.ai import router as ai_router
+from routes.evacuation import router as evacuation_router
 from routes.resources import evac_router, resource_router, alert_router
 from routes.audit import router as audit_router
 from routes.public import router as public_router
@@ -32,7 +35,27 @@ from utils.rate_limit import limiter, rate_limit_exceeded_handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_tables()
-    print("✅ FloodMonitor API started. Tables created.")
+    print("[OK] FloodMonitor API started. Tables created.")
+
+    # Bootstrap the LSTM dam live buffer from the last 60 minutes of FloodData.
+    # This runs once at startup — any failure is logged and ignored so the
+    # existing application continues normally without LSTM support.
+    try:
+        from database.connection import SessionLocal
+        from ml.dam.live_buffer import dam_buffer
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        with SessionLocal() as _db:
+            loaded = dam_buffer.bootstrap(_db)
+        _log.info("Dam LSTM buffer bootstrap: %d/60 minute buckets loaded.", loaded)
+        print(f"[OK] Dam LSTM buffer bootstrapped ({loaded}/60 minutes).")
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "Dam LSTM buffer bootstrap skipped: %s", _exc, exc_info=True
+        )
+        print(f"[WARN] Dam LSTM buffer bootstrap skipped: {_exc}")
+
     yield
 
 
@@ -125,11 +148,14 @@ app.include_router(dashboard_router, prefix=API_PREFIX)
 app.include_router(user_router, prefix=API_PREFIX)
 app.include_router(report_router, prefix=API_PREFIX)
 app.include_router(genai_router, prefix=API_PREFIX)
+app.include_router(ai_router, prefix=API_PREFIX)
+app.include_router(evacuation_router, prefix=API_PREFIX)
 app.include_router(evac_router, prefix=API_PREFIX)
 app.include_router(resource_router, prefix=API_PREFIX)
 app.include_router(alert_router, prefix=API_PREFIX)
 app.include_router(audit_router, prefix=API_PREFIX)
 app.include_router(public_router, prefix=API_PREFIX)
+app.include_router(lstm_router,   prefix=API_PREFIX)
 
 
 @app.get("/api/health")

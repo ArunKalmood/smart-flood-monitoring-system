@@ -73,6 +73,7 @@ export const dashboardAPI = {
 export const sensorAPI = {
   getAll:     ()                => api.get('/sensors/'),
   getHistory: (sensorId, hours) => api.get('/sensors/data/history', { params: { sensor_id: sensorId, hours } }),
+  getLive:    (sensorId)        => api.get('/sensors/live', { params: sensorId ? { sensor_id: sensorId } : {} }),
 };
 
 export const predictionAPI = {
@@ -80,6 +81,21 @@ export const predictionAPI = {
   getHistory: (hours) => api.get('/predictions/history', { params: { hours } }),
   getDaily:   (days)  => api.get('/predictions/daily', { params: { days, utc_offset_minutes: utcOffsetMinutes() } }),
   getStats:   (days)  => api.get('/predictions/stats', { params: { days } }),
+};
+
+export const aiAPI = {
+  analyzeFlood:   (data)    => api.post('/ai/analyze-flood', data),
+  getFloodStatus: ()        => api.get('/ai/flood-status'),
+  chat:           (data)    => api.post('/ai/chat', data),
+  translate:      (data)    => api.post('/ai/translate', data),
+  getGeminiStatus:()        => api.get('/ai/gemini-status'),
+  getLanguages:   ()        => api.get('/ai/languages'),
+  getHistory:     (params)  => api.get('/ai/history', { params }),
+};
+
+export const evacuationHelperAPI = {
+  getNearby:      (params)  => api.get('/evacuation/nearby-centres', { params }),
+  recommendRoute: (data)    => api.post('/evacuation/recommend-route', data),
 };
 
 export const sosAPI = {
@@ -155,6 +171,12 @@ export const auditAPI = {
   getAll:     (params) => api.get('/audit/', { params }),
   getActions: ()       => api.get('/audit/actions'),
   getStats:   (days)   => api.get('/audit/stats', { params: { days } }),
+};
+
+/** Dam LSTM water-level forecast (completely separate from rule-based predictions). */
+export const lstmAPI = {
+  predict: () => api.get('/lstm/predict'),
+  status:  () => api.get('/lstm/status'),
 };
 
 export const userAPI = {

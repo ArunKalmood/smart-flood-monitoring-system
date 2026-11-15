@@ -8,7 +8,7 @@
  */
 import {
   LayoutDashboard, Radio, Brain, AlertTriangle, Package, Map,
-  Home, Users, MessageSquare, Bell, FileText, User, Settings,
+  Home, Users, MessageSquare, Bell, FileText, User, Settings, Sparkles, TrendingUp,
 } from 'lucide-react';
 import { can } from './permissions';
 
@@ -16,6 +16,8 @@ export const DASHBOARD_PAGES = [
   { path: '/dashboard',               labelKey: 'nav_dashboard',     icon: LayoutDashboard, permission: null },
   { path: '/dashboard/sensors',       labelKey: 'nav_sensors',       icon: Radio,           permission: null },
   { path: '/dashboard/predictions',   labelKey: 'nav_predictions',   icon: Brain,           permission: null },
+  { path: '/dashboard/ai-intelligence', labelKey: 'nav_ai_intelligence', icon: Sparkles,   permission: null },
+  { path: '/dashboard/lstm-prediction', labelKey: 'nav_lstm_prediction', icon: TrendingUp, permission: null },
   { path: '/dashboard/sos',           labelKey: 'nav_sos',           icon: AlertTriangle,   permission: null },
   { path: '/dashboard/resources',     labelKey: 'nav_resources',     icon: Package,         permission: 'resources.view' },
   { path: '/dashboard/routes',        labelKey: 'nav_routes',        icon: Map,             permission: null },

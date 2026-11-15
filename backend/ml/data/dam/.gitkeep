@@ -1,0 +1,3 @@
+# Place dam_simulated_dataset.csv and dam_lstm_dataset.csv here before training.
+# Required columns: timestamp, water_level_cm, rain_detected,
+#                   water_level_next_15min, water_level_next_30min
